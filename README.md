@@ -742,6 +742,34 @@ cmake -DPLATFORM="PSVITA" \
 make
 ```
 
+#### Building with VitaGL (OpenGL Rendering)
+
+For an OpenGL-based renderer using VitaGL instead of vita2d, add the `USE_VITAGL` option:
+
+```bash
+export VITASDK=/usr/local/vitasdk
+export PATH=$VITASDK/bin:$PATH
+
+mkdir build_psvita_mvs_gl
+cd build_psvita_mvs_gl
+cmake -DPLATFORM="PSVITA" \
+      -DCMAKE_TOOLCHAIN_FILE=${VITASDK}/share/vita.toolchain.cmake \
+      -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+      -DTARGET=MVS \
+      -DUSE_VITAGL=ON \
+      ..
+make
+```
+
+**VitaGL Benefits:**
+- Hardware-accelerated OpenGL ES rendering
+- Batch sprite rendering for better performance (single draw call vs. multiple)
+- More efficient GPU utilization similar to PSP's approach
+
+**VitaGL Requirements:**
+- VitaGL library installed in VitaSDK
+- vitashark and related shader dependencies
+
 #### Output
 
 After a successful build, you'll find the following files in the build directory:
@@ -788,10 +816,18 @@ ux0:data/{TARGET}/
 
 #### Performance Notes
 
+**Rendering Options:**
+- **vita2d** (default): Simple 2D rendering library with individual sprite calls
+- **VitaGL** (optional): OpenGL ES with batched rendering for better performance
+
+**System Configuration:**
 - The PS Vita runs at 444 MHz ARM CPU by default (can be set in code)
 - GPU clock is set to 222 MHz for optimal performance
-- The emulator uses vita2d for hardware-accelerated rendering
 - Audio output is handled via SceAudio with stereo support
+
+**Rendering Performance:**
+- vita2d: Easy to use but renders each sprite individually
+- VitaGL: More complex but uses batched draw calls similar to PSP's sceGuDrawArray, potentially offering better performance for sprite-heavy games
 
 ---
 

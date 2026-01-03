@@ -59,10 +59,15 @@ option(RELEASE "Release" OFF)
 option(SYSTEM_BUTTONS "System Buttons" OFF)
 option(USE_ASAN "Use ASAN" OFF)
 option(USE_PG "Use Performance Graph" OFF)
+option(USE_VITAGL "Use VitaGL for PS Vita (OpenGL rendering)" OFF)
 
 # Add options to compiler definitions
 if (NO_GUI)
     add_definitions(-DNO_GUI)
+endif()
+
+if (USE_VITAGL AND PLATFORM STREQUAL "PSVITA")
+    add_definitions(-DUSE_VITAGL)
 endif()
 
 # Version
@@ -234,6 +239,12 @@ else()
     # Add source files related to GUI if needed
 endif()
 
+# Select video driver based on platform and options
+if (PLATFORM STREQUAL "PSVITA" AND USE_VITAGL)
+    set(VIDEO_SRC ${PLATFORM_LOWER}/${PLATFORM_LOWER}_video_gl.c)
+else()
+    set(VIDEO_SRC ${PLATFORM_LOWER}/${PLATFORM_LOWER}_video.c)
+endif()
 
 set(OS_SRC ${OS_SRC}
     ${PLATFORM_LOWER}/${PLATFORM_LOWER}.h
@@ -242,7 +253,7 @@ set(OS_SRC ${OS_SRC}
     ${PLATFORM_LOWER}/${PLATFORM_LOWER}_power.c
     ${PLATFORM_LOWER}/${PLATFORM_LOWER}_ui_text.c
     ${PLATFORM_LOWER}/${PLATFORM_LOWER}_input.c
-    ${PLATFORM_LOWER}/${PLATFORM_LOWER}_video.c
+    ${VIDEO_SRC}
     ${PLATFORM_LOWER}/${PLATFORM_LOWER}_audio.c
     ${PLATFORM_LOWER}/${PLATFORM_LOWER}_thread.c
 )
@@ -472,8 +483,21 @@ elseif(PLATFORM STREQUAL "PSP")
         psppower
     )
 elseif(PLATFORM STREQUAL "PSVITA")
+    if (USE_VITAGL)
+        target_link_libraries(${TARGET} PUBLIC
+            vitaGL
+            vitashark
+            SceShaccCgExt
+            taihen_stub
+            SceShaccCg_stub
+            mathneon
+        )
+    else()
+        target_link_libraries(${TARGET} PUBLIC
+            vita2d
+        )
+    endif()
     target_link_libraries(${TARGET} PUBLIC
-        vita2d
         SceDisplay_stub
         SceGxm_stub
         SceSysmodule_stub
