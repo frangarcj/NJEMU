@@ -34,6 +34,7 @@ set(PLATFORM_VALUES
     "PSP"     # 0
     "PS2"     # 1 
     "DESKTOP" # 2
+    "PSVITA"  # 3
 )
 list(FIND PLATFORM_VALUES ${PLATFORM} PLATFORM_INDEX)
 if (PLATFORM_INDEX EQUAL -1)
@@ -82,6 +83,19 @@ add_definitions(-DVERSION_STR="${VERSION_STR}")
 
 # Define TARGET_STR in the code
 add_definitions(-DTARGET_STR="${TARGET}")
+
+# PS Vita Title IDs (NJMU = NJEMU)
+if (PLATFORM STREQUAL "PSVITA")
+    if (TARGET STREQUAL "MVS")
+        set(VITA_TITLEID "NJMU00001")
+    elseif (TARGET STREQUAL "NCDZ")
+        set(VITA_TITLEID "NJMU00002")
+    elseif (TARGET STREQUAL "CPS1")
+        set(VITA_TITLEID "NJMU00003")
+    elseif (TARGET STREQUAL "CPS2")
+        set(VITA_TITLEID "NJMU00004")
+    endif()
+endif()
 
 # Set compiler flags
 if (USE_PG)
@@ -457,6 +471,20 @@ elseif(PLATFORM STREQUAL "PSP")
         pspgu
         psppower
     )
+elseif(PLATFORM STREQUAL "PSVITA")
+    target_link_libraries(${TARGET} PUBLIC
+        vita2d
+        SceDisplay_stub
+        SceGxm_stub
+        SceSysmodule_stub
+        SceCtrl_stub
+        SceAudio_stub
+        ScePower_stub
+        SceCommonDialog_stub
+        SceTouch_stub
+        SceHid_stub
+        m
+    )
 endif()
 
 # Add libmad library if needed
@@ -495,6 +523,15 @@ if(PLATFORM STREQUAL "PSP")
     )
 endif()
 
+# Create VPK package for PS Vita
+if(PLATFORM STREQUAL "PSVITA")
+    vita_create_self(${TARGET}.self ${TARGET})
+    vita_create_vpk(${TARGET}.vpk ${VITA_TITLEID} ${TARGET}.self
+        VERSION ${VERSION_STR}
+        NAME "${TARGET}"
+    )
+endif()
+
 # ==============================================================================
 # Install rules
 # ==============================================================================
@@ -509,6 +546,8 @@ if(PLATFORM STREQUAL "PSP")
     install(FILES ${CMAKE_BINARY_DIR}/EBOOT.PBP DESTINATION .)
 elseif(PLATFORM STREQUAL "PS2")
     install(PROGRAMS ${CMAKE_BINARY_DIR}/${TARGET} DESTINATION . RENAME ${TARGET}.elf)
+elseif(PLATFORM STREQUAL "PSVITA")
+    install(FILES ${CMAKE_BINARY_DIR}/${TARGET}.vpk DESTINATION .)
 else()
     install(TARGETS ${TARGET} DESTINATION .)
 endif()
