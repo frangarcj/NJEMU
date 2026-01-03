@@ -1,16 +1,6 @@
 cmake_minimum_required(VERSION 3.12)
 
-# Include VitaSDK modules if building for PS Vita
-if(DEFINED ENV{VITASDK})
-    set(CMAKE_TOOLCHAIN_FILE "$ENV{VITASDK}/share/vita.toolchain.cmake" CACHE PATH "toolchain file")
-endif()
-
 project(NJEMU)
-
-# Include VitaSDK CMake modules for PS Vita builds
-if(DEFINED ENV{VITASDK})
-    include("$ENV{VITASDK}/share/vita.cmake" REQUIRED)
-endif()
 
 # Configuration
 
@@ -57,6 +47,15 @@ string(TOLOWER ${PLATFORM} PLATFORM_LOWER)
 
 # Add platform to compiler definitions
 add_definitions(-D${PLATFORM})
+
+# Include VitaSDK CMake modules for PS Vita builds
+if(PLATFORM STREQUAL "PSVITA")
+    if(DEFINED ENV{VITASDK})
+        include("$ENV{VITASDK}/share/vita.cmake" REQUIRED)
+    else()
+        message(FATAL_ERROR "VITASDK environment variable is not set. Please install VitaSDK and set the VITASDK environment variable.")
+    endif()
+endif()
 
 # Different options availables
 option(LARGE_MEMORY "Large Memory" OFF)
