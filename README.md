@@ -76,14 +76,14 @@ The porting effort involved encapsulating platform-agnostic code and creating sp
 
 ### Current Porting Status
 
-| Emulator | PSP | PS2 | PC |
-|----------|-----|-----|-----|
-| **MVS** | ✅ Full | ✅ Core | ✅ Core |
-| **CPS1** | ✅ Full | ❌ | ❌ |
-| **CPS2** | ✅ Full | ❌ | ❌ |
-| **NCDZ** | ✅ Full | ✅ Core | ✅ Core |
+| Emulator | PSP | PS2 | PC | PS Vita |
+|----------|-----|-----|-----|----|
+| **MVS** | ✅ Full | ✅ Core | ✅ Core | ✅ Core |
+| **CPS1** | ✅ Full | ❌ | ❌ | ❌ |
+| **CPS2** | ✅ Full | ❌ | ❌ | ❌ |
+| **NCDZ** | ✅ Full | ✅ Core | ✅ Core | ✅ Core |
 
-> **Note:** Currently MVS and NCDZ cores have been ported to PS2 and PC. The menu/GUI system has not been ported yet - only the emulation core runs on the new platforms.
+> **Note:** Currently MVS and NCDZ cores have been ported to PS2, PC, and PS Vita. The menu/GUI system has not been ported yet - only the emulation core runs on the new platforms.
 
 📋 See [PORTING_PLAN.md](PORTING_PLAN.md) for detailed roadmap and remaining work.
 
@@ -109,6 +109,7 @@ Each target has specific setup requirements. See the linked README files for:
 |----------|-------------|--------|
 | **PSP** | Sony PlayStation Portable | ✅ Original platform |
 | **PS2** | Sony PlayStation 2 | 🔄 Active development |
+| **PS Vita** | Sony PlayStation Vita | ✅ Fully supported |
 | **DESKTOP** | PC/Desktop (SDL2) | 🛠️ Debug/Development |
 
 ### PSP Firmware Compatibility
@@ -675,6 +676,122 @@ For debugging on PS2, use `ps2client` with ps2link:
 # Send and run the ELF file on PS2 running ps2link
 ps2client -h <PS2_IP_ADDRESS> execee host:{TARGET}.elf
 ```
+
+---
+
+### PS Vita (PlayStation Vita)
+
+The PS Vita port uses VitaSDK and vita2d for rendering, providing native performance on Sony's handheld console.
+
+#### Prerequisites
+
+- [VitaSDK](https://vitasdk.org/) toolchain installed
+- CMake 3.12 or higher
+
+#### Environment Setup
+
+Set up the required environment variables:
+
+```bash
+export VITASDK=/path/to/vitasdk
+export PATH=$VITASDK/bin:$PATH
+```
+
+> **Note:** Replace `/path/to/vitasdk` with your actual VitaSDK installation path (e.g., `/usr/local/vitasdk` or `$HOME/vitasdk`).
+
+#### Building
+
+1. Create the build directory and navigate to it:
+
+```bash
+mkdir build_psvita_{target}
+cd build_psvita_{target}
+```
+
+2. Run CMake with the VitaSDK toolchain:
+
+```bash
+cmake -DPLATFORM="PSVITA" \
+      -DCMAKE_TOOLCHAIN_FILE=${VITASDK}/share/vita.toolchain.cmake \
+      -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+      -DTARGET={TARGET} \
+      ..
+```
+
+Replace `{TARGET}` with one of: `MVS` or `NCDZ` (currently supported on PS Vita).
+
+3. Build the project:
+
+```bash
+make
+```
+
+#### Example: Building MVS for PS Vita
+
+```bash
+export VITASDK=/usr/local/vitasdk
+export PATH=$VITASDK/bin:$PATH
+
+mkdir build_psvita_mvs
+cd build_psvita_mvs
+cmake -DPLATFORM="PSVITA" \
+      -DCMAKE_TOOLCHAIN_FILE=${VITASDK}/share/vita.toolchain.cmake \
+      -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+      -DTARGET=MVS \
+      ..
+make
+```
+
+#### Output
+
+After a successful build, you'll find the following files in the build directory:
+- `{TARGET}.vpk` - The installable VPK package for PS Vita
+- `{TARGET}.self` - The self-signed executable
+- Resource files copied from `{TARGET}_RESOURCE/`
+
+#### Configuring the Game (NO_GUI builds)
+
+For builds with `NO_GUI=ON` (default), the emulator reads the game to boot from the `game_name.ini` file. Create this file in `ux0:data/{TARGET}/` on your PS Vita and set it to the ROM name (without extension):
+
+```
+mslug
+```
+
+#### Installing on PS Vita
+
+**Using VitaShell:**
+
+1. Copy the `.vpk` file to your PS Vita (via USB or FTP)
+2. Open VitaShell on your PS Vita
+3. Navigate to the `.vpk` file
+4. Press ✕ to install
+5. Launch the application from LiveArea
+
+**Directory Structure on PS Vita:**
+
+```
+ux0:data/{TARGET}/
+├── game_name.ini           # Game to boot (NO_GUI mode)
+├── roms/                   # ROM files (ZIP format)
+├── cache/                  # Cache files (if needed)
+└── ... (other directories as needed)
+```
+
+#### Title IDs
+
+| Target | Title ID |
+|--------|----------|
+| MVS    | NJMU00001 |
+| NCDZ   | NJMU00002 |
+| CPS1   | NJMU00003 |
+| CPS2   | NJMU00004 |
+
+#### Performance Notes
+
+- The PS Vita runs at 444 MHz ARM CPU by default (can be set in code)
+- GPU clock is set to 222 MHz for optimal performance
+- The emulator uses vita2d for hardware-accelerated rendering
+- Audio output is handled via SceAudio with stereo support
 
 ---
 

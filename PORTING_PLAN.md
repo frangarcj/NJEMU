@@ -8,39 +8,39 @@ This document outlines the remaining work needed to complete the cross-platform 
 
 ### Emulator Core Porting
 
-| Emulator | PSP | PS2 | PC | Notes |
-|----------|-----|-----|-----|-------|
-| **MVS** | ✅ Complete | ✅ Core done | ✅ Core done | Sprite rendering ported |
-| **NCDZ** | ✅ Complete | ✅ Core done | ✅ Core done | Sprite rendering ported |
-| **CPS1** | ✅ Complete | ❌ Not started | ❌ Not started | Missing sprite rendering |
-| **CPS2** | ✅ Complete | ❌ Not started | ❌ Not started | Missing sprite rendering |
+| Emulator | PSP | PS2 | PC | PS Vita | Notes |
+|----------|-----|-----|-----|---------|-------|
+| **MVS** | ✅ Complete | ✅ Core done | ✅ Core done | ✅ Core done | Sprite rendering ported |
+| **NCDZ** | ✅ Complete | ✅ Core done | ✅ Core done | ✅ Core done | Sprite rendering ported |
+| **CPS1** | ✅ Complete | ❌ Not started | ❌ Not started | ❌ Not started | Missing sprite rendering |
+| **CPS2** | ✅ Complete | ❌ Not started | ❌ Not started | ❌ Not started | Missing sprite rendering |
 
 ### Platform Drivers
 
-| Driver | PSP | PS2 | PC | Purpose |
-|--------|-----|-----|-----|---------|
-| `*_platform.c` | ✅ | ✅ | ✅ | Platform init/main loop |
-| `*_video.c` | ✅ | ✅ | ✅ | Screen rendering |
-| `*_audio.c` | ✅ | ✅ | ✅ | Sound output |
-| `*_input.c` | ✅ | ✅ | ✅ | Controller input |
-| `*_thread.c` | ✅ | ✅ | ✅ | Threading |
-| `*_ticker.c` | ✅ | ✅ | ✅ | Timing |
-| `*_power.c` | ✅ | ✅ | ✅ | Power management |
-| `*_ui_text.c` | ✅ | ✅ | ✅ | Basic text output |
-| `*_no_gui.c` | ✅ | ✅ | ✅ | Stub UI for testing |
+| Driver | PSP | PS2 | PC | PS Vita | Purpose |
+|--------|-----|-----|-----|---------|---------|
+| `*_platform.c` | ✅ | ✅ | ✅ | ✅ | Platform init/main loop |
+| `*_video.c` | ✅ | ✅ | ✅ | ✅ | Screen rendering |
+| `*_audio.c` | ✅ | ✅ | ✅ | ✅ | Sound output |
+| `*_input.c` | ✅ | ✅ | ✅ | ✅ | Controller input |
+| `*_thread.c` | ✅ | ✅ | ✅ | ✅ | Threading |
+| `*_ticker.c` | ✅ | ✅ | ✅ | ✅ | Timing |
+| `*_power.c` | ✅ | ✅ | ✅ | ✅ | Power management |
+| `*_ui_text.c` | ✅ | ✅ | ✅ | ✅ | Basic text output |
+| `*_no_gui.c` | ✅ | ✅ | ✅ | ✅ | Stub UI for testing |
 
 ### GUI/Menu System
 
-| Component | PSP | PS2 | PC | Files |
-|-----------|-----|-----|-----|-------|
-| UI Framework | ✅ | ❌ | ❌ | `ui.c/h`, `ui_draw.c/h` |
-| Menu System | ✅ | ❌ | ❌ | `ui_menu.c/h` |
-| File Browser | ✅ | ❌ | ❌ | `filer.c/h` |
-| Configuration | ✅ | ❌ | ❌ | `config.c/h`, `config/*.c` |
-| Font Rendering | ✅ | ❌ | ❌ | `font/*.c` |
-| PNG Loading | ✅ | ❌ | ❌ | `png.c/h` |
-| Wallpapers | ✅ | ❌ | ❌ | `wallpaper.c/h` |
-| Icons | ✅ | ❌ | ❌ | `icon/*.c` |
+| Component | PSP | PS2 | PC | PS Vita | Files |
+|-----------|-----|-----|-----|---------|-------|
+| UI Framework | ✅ | ❌ | ❌ | ❌ | `ui.c/h`, `ui_draw.c/h` |
+| Menu System | ✅ | ❌ | ❌ | ❌ | `ui_menu.c/h` |
+| File Browser | ✅ | ❌ | ❌ | ❌ | `filer.c/h` |
+| Configuration | ✅ | ❌ | ❌ | ❌ | `config.c/h`, `config/*.c` |
+| Font Rendering | ✅ | ❌ | ❌ | ❌ | `font/*.c` |
+| PNG Loading | ✅ | ❌ | ❌ | ❌ | `png.c/h` |
+| Wallpapers | ✅ | ❌ | ❌ | ❌ | `wallpaper.c/h` |
+| Icons | ✅ | ❌ | ❌ | ❌ | `icon/*.c` |
 
 ---
 
