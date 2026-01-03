@@ -1,5 +1,16 @@
 cmake_minimum_required(VERSION 3.12)
+
+# Include VitaSDK modules if building for PS Vita
+if(DEFINED ENV{VITASDK})
+    set(CMAKE_TOOLCHAIN_FILE "$ENV{VITASDK}/share/vita.toolchain.cmake" CACHE PATH "toolchain file")
+endif()
+
 project(NJEMU)
+
+# Include VitaSDK CMake modules for PS Vita builds
+if(DEFINED ENV{VITASDK})
+    include("$ENV{VITASDK}/share/vita.cmake" REQUIRED)
+endif()
 
 # Configuration
 
