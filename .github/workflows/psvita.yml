@@ -20,9 +20,6 @@ jobs:
         target: [MVS, NCDZ] # CPS1, CPS2 require desktop port first
         use_vitagl: [ON, OFF] # Build both vita2d and VitaGL versions
         no_gui: [ON] # TODO: OFF when GUI is ported
-        exclude:
-          - target: CPS1
-          - target: CPS2
       fail-fast: false
 
     container: vitasdk/vitasdk:latest
@@ -38,7 +35,7 @@ jobs:
       run: |
         git clone https://github.com/xerpi/vita2dlib
         cd vita2dlib/libvita2d
-        make install
+        make -j$(getconf _NPROCESSORS_ONLN) install
 
     - name: Install VitaGL (for VitaGL builds)
       if: matrix.use_vitagl == 'ON'
@@ -46,13 +43,13 @@ jobs:
         # Install vitashark
         git clone https://github.com/Rinnegatamante/vitashark
         cd vitashark
-        make install
+        make -j$(getconf _NPROCESSORS_ONLN) install
         cd ..
         
         # Install VitaGL
         git clone https://github.com/Rinnegatamante/vitaGL
         cd vitaGL
-        make install
+        make -j$(getconf _NPROCESSORS_ONLN) install
 
     - name: Compile project
       run: |
