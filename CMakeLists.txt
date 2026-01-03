@@ -96,6 +96,41 @@ else()
 endif()
 add_definitions(-DVERSION_STR="${VERSION_STR}")
 
+# PS Vita requires version format "##.##" with leading zeros
+if (PLATFORM STREQUAL "PSVITA")
+    # Pad major and minor versions with leading zeros to 2 digits
+    string(LENGTH "${VERSION_MAJOR}" MAJOR_LEN)
+    string(LENGTH "${VERSION_MINOR}" MINOR_LEN)
+    
+    if(MAJOR_LEN EQUAL 1)
+        set(VITA_VERSION_STR "0${VERSION_MAJOR}.0${VERSION_MINOR}")
+    else()
+        set(VITA_VERSION_STR "${VERSION_MAJOR}.0${VERSION_MINOR}")
+    endif()
+    
+    if(MINOR_LEN EQUAL 2)
+        set(VITA_VERSION_STR "${VERSION_MAJOR}.${VERSION_MINOR}")
+        if(MAJOR_LEN EQUAL 1)
+            set(VITA_VERSION_STR "0${VERSION_MAJOR}.${VERSION_MINOR}")
+        endif()
+    endif()
+    
+    # Simpler approach: just format it properly
+    if(VERSION_MAJOR LESS 10)
+        set(VITA_MAJOR_STR "0${VERSION_MAJOR}")
+    else()
+        set(VITA_MAJOR_STR "${VERSION_MAJOR}")
+    endif()
+    
+    if(VERSION_MINOR LESS 10)
+        set(VITA_MINOR_STR "0${VERSION_MINOR}")
+    else()
+        set(VITA_MINOR_STR "${VERSION_MINOR}")
+    endif()
+    
+    set(VITA_VERSION_STR "${VITA_MAJOR_STR}.${VITA_MINOR_STR}")
+endif()
+
 # Define TARGET_STR in the code
 add_definitions(-DTARGET_STR="${TARGET}")
 
@@ -561,7 +596,7 @@ endif()
 if(PLATFORM STREQUAL "PSVITA")
     vita_create_self(${TARGET}.self ${TARGET})
     vita_create_vpk(${TARGET}.vpk ${VITA_TITLEID} ${TARGET}.self
-        VERSION ${VERSION_STR}
+        VERSION ${VITA_VERSION_STR}
         NAME "${TARGET}"
     )
 endif()
