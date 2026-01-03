@@ -26,6 +26,9 @@ ticker_driver_t *ticker_drivers[] = {
 #ifdef DESKTOP
 	&ticker_desktop,
 #endif
+#ifdef PSVITA
+	&ticker_psvita,
+#endif
 	&ticker_null,
 	NULL,
 };

@@ -29,6 +29,9 @@ audio_driver_t *audio_drivers[] = {
 #ifdef DESKTOP
 	&audio_desktop,
 #endif
+#ifdef PSVITA
+	&audio_psvita,
+#endif
 	&audio_null,
 	NULL,
 };

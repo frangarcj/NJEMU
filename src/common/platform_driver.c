@@ -25,6 +25,9 @@ platform_driver_t *platform_drivers[] = {
 #ifdef DESKTOP
 	&platform_desktop,
 #endif
+#ifdef PSVITA
+	&platform_psvita,
+#endif
 	&platform_null,
 	NULL,
 };

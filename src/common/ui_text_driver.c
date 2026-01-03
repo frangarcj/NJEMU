@@ -27,6 +27,9 @@ ui_text_driver_t *ui_text_drivers[] = {
 #ifdef DESKTOP
 	&ui_text_desktop,
 #endif
+#ifdef PSVITA
+	&ui_text_psvita,
+#endif
 	&ui_text_null,
 	NULL,
 };

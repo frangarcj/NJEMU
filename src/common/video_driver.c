@@ -52,6 +52,9 @@ video_driver_t *video_drivers[] = {
 #ifdef DESKTOP
 	&video_desktop,
 #endif
+#ifdef PSVITA
+	&video_psvita,
+#endif
 	&video_null,
 	NULL,
 };
