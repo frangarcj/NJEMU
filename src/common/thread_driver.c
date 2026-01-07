@@ -32,6 +32,9 @@ thread_driver_t *thread_drivers[] = {
 #ifdef DESKTOP
 	&thread_desktop,
 #endif
+#ifdef PSVITA
+	&thread_psvita,
+#endif
 	&thread_null,
 	NULL,
 };

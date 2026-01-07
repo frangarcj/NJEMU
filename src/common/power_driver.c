@@ -30,6 +30,9 @@ power_driver_t *power_drivers[] = {
 #ifdef DESKTOP
 	&power_desktop,
 #endif
+#ifdef PSVITA
+	&power_psvita,
+#endif
 	&power_null,
 	NULL,
 };

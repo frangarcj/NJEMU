@@ -1643,8 +1643,13 @@ static void YM2151Update_mono_with_okim6295(int32_t **buffer, int length)
 void YM2151Init(int clock, FM_IRQHANDLER IRQHandler)
 {
 	sound->stack     = 0x10000;
+#if defined(__vita__)
+	sound->frequency = 48000;
+	sound->samples   = SOUND_SAMPLES_48000;
+#else
 	sound->frequency = 44100;
 	sound->samples   = SOUND_SAMPLES_44100;
+#endif
 
 	switch (machine_sound_type)
 	{

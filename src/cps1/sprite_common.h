@@ -157,7 +157,7 @@ extern uint16_t clut0_num;
 extern uint16_t clut1_num;
 
 /* Color table */
-extern const uint32_t ALIGN_DATA color_table[16];
+extern const uint32_t ALIGN_DATA emu_color_table[16];
 
 /* Frame counter (from vidhrdw.c) */
 extern uint32_t frames_displayed;

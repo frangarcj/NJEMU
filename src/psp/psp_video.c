@@ -199,22 +199,25 @@ static void *psp_frameAddr(void *data, void *frame, int x, int y)
 static void *psp_workFrame(void *data, enum WorkBuffer buffer)
 {
 	uint16_t *scrbitmap_tmp  = (uint16_t *)psp_frameAddr(data, work_frame, 0, 0);
-	uint8_t *tex_spr0 = (uint8_t *)(scrbitmap_tmp + BUF_WIDTH * SCR_HEIGHT);
-	uint8_t *tex_spr1 = tex_spr0 + BUF_WIDTH * TEXTURE_HEIGHT;
-	uint8_t *tex_spr2 = tex_spr1 + BUF_WIDTH * TEXTURE_HEIGHT;
-	uint8_t *tex_fix = tex_spr2 + BUF_WIDTH * TEXTURE_HEIGHT;
+	uint8_t *tex_scrh = (uint8_t *)(scrbitmap_tmp + BUF_WIDTH * SCR_HEIGHT);
+	uint8_t *tex_obj  = tex_scrh + BUF_WIDTH * TEXTURE_HEIGHT;
+	uint8_t *tex_scr1 = tex_obj  + BUF_WIDTH * TEXTURE_HEIGHT;
+	uint8_t *tex_scr2 = tex_scr1 + BUF_WIDTH * TEXTURE_HEIGHT;
+	uint8_t *tex_scr3 = tex_scr2 + BUF_WIDTH * TEXTURE_HEIGHT;
 	switch (buffer)
 	{
 		case SCRBITMAP:
 			return scrbitmap_tmp;
-		case TEX_SPR0:
-			return tex_spr0;
-		case TEX_SPR1:
-			return tex_spr1;
-		case TEX_SPR2:
-			return tex_spr2;
-		case TEX_FIX:
-			return tex_fix;
+		case TEX_OBJ:
+			return tex_obj;
+		case TEX_SCR1:
+			return tex_scr1;
+		case TEX_SCR2:
+			return tex_scr2;
+		case TEX_SCR3:
+			return tex_scr3;
+		case TEX_SCRH:
+			return tex_scrh;
 	}
 
 	return NULL;

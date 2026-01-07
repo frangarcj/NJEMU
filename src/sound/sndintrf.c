@@ -232,8 +232,11 @@ int sound_init(void)
 
 #if (EMU_SYSTEM != CPS2)
 	sample_shift = 2 - option_samplerate;
+#if defined(__vita__)
+	samples_per_update = (((float)sound->frequency / FPS)) / (1 << sample_shift);
+#else
 	samples_per_update = (((float)sound->frequency / FPS) * 2) / (1 << sample_shift);
-
+#endif
 	samples_left_over   = samples_per_update;
 	samples_this_update = (uint32_t)samples_per_update;
 	samples_left_over  -= samples_this_update;

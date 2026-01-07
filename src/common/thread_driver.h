@@ -36,6 +36,7 @@ typedef struct thread_driver
 extern thread_driver_t thread_psp;
 extern thread_driver_t thread_ps2;
 extern thread_driver_t thread_desktop;
+extern thread_driver_t thread_psvita;
 extern thread_driver_t thread_null;
 
 extern thread_driver_t *thread_drivers[];

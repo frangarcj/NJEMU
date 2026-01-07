@@ -314,7 +314,7 @@ void blit_draw_object(int16_t x, int16_t y, uint32_t code, uint16_t attr)
 			idx = object_insert_sprite(key);
 			dst = SWIZZLED8_16x16(tex_object, idx);
 			src = &gfx_object[code << 7];
-			col = color_table[attr & 0x0f];
+			col = emu_color_table[attr & 0x0f];
 
 			while (lines--)
 			{
@@ -452,7 +452,7 @@ void blit_draw_scroll1(int16_t x, int16_t y, uint32_t code, uint16_t attr, uint1
 		idx = scroll1_insert_sprite(key);
 		dst = SWIZZLED8_8x8(tex_scroll1, idx);
 		src = &gfx_scroll1[(code << 6) + (gfxset << 2)];
-		col = color_table[attr & 0x0f];
+		col = emu_color_table[attr & 0x0f];
 
 		while (lines--)
 		{
@@ -649,7 +649,7 @@ static void blit_draw_scroll2_hardware(int16_t x, int16_t y, uint32_t code, uint
 		idx = scroll2_insert_sprite(key);
 		dst = SWIZZLED8_16x16(tex_scroll2, idx);
 		src = &gfx_scroll2[code << 7];
-		col = color_table[attr & 0x0f];
+		col = emu_color_table[attr & 0x0f];
 
 		while (lines--)
 		{
@@ -777,7 +777,7 @@ void blit_draw_scroll3(int16_t x, int16_t y, uint32_t code, uint16_t attr)
 		idx = scroll3_insert_sprite(key);
 		dst = SWIZZLED8_32x32(tex_scroll3, idx);
 		src = &gfx_scroll3[code << 9];
-		col = color_table[attr & 0x0f];
+		col = emu_color_table[attr & 0x0f];
 
 		while (lines--)
 		{

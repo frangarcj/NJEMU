@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 3.12)
+
 project(NJEMU)
 
 # Configuration
@@ -34,6 +35,7 @@ set(PLATFORM_VALUES
     "PSP"     # 0
     "PS2"     # 1 
     "DESKTOP" # 2
+    "PSVITA"  # 3
 )
 list(FIND PLATFORM_VALUES ${PLATFORM} PLATFORM_INDEX)
 if (PLATFORM_INDEX EQUAL -1)
@@ -45,6 +47,15 @@ string(TOLOWER ${PLATFORM} PLATFORM_LOWER)
 
 # Add platform to compiler definitions
 add_definitions(-D${PLATFORM})
+
+# Include VitaSDK CMake modules for PS Vita builds
+if(PLATFORM STREQUAL "PSVITA")
+    if(DEFINED ENV{VITASDK})
+        include("$ENV{VITASDK}/share/vita.cmake" REQUIRED)
+    else()
+        message(FATAL_ERROR "VITASDK environment variable is not set. Please install VitaSDK and set the VITASDK environment variable.")
+    endif()
+endif()
 
 # Different options availables
 option(LARGE_MEMORY "Large Memory" OFF)
@@ -58,10 +69,20 @@ option(RELEASE "Release" OFF)
 option(SYSTEM_BUTTONS "System Buttons" OFF)
 option(USE_ASAN "Use ASAN" OFF)
 option(USE_PG "Use Performance Graph" OFF)
+option(USE_VITAGL "Use VitaGL instead of vita2d (OpenGL rendering)" OFF)
+option(USE_SCE_CLIB_PRINTF "Use sceClibPrintf instead of printf on PS Vita" ON)
 
 # Add options to compiler definitions
 if (NO_GUI)
     add_definitions(-DNO_GUI)
+endif()
+
+if (USE_VITAGL AND PLATFORM STREQUAL "PSVITA")
+    add_definitions(-DUSE_VITAGL)
+endif()
+
+if (USE_SCE_CLIB_PRINTF AND PLATFORM STREQUAL "PSVITA")
+    add_definitions(-DUSE_SCE_CLIB_PRINTF)
 endif()
 
 # Version
@@ -80,8 +101,56 @@ else()
 endif()
 add_definitions(-DVERSION_STR="${VERSION_STR}")
 
+# PS Vita requires version format "##.##" with leading zeros
+if (PLATFORM STREQUAL "PSVITA")
+    # Pad major and minor versions with leading zeros to 2 digits
+    string(LENGTH "${VERSION_MAJOR}" MAJOR_LEN)
+    string(LENGTH "${VERSION_MINOR}" MINOR_LEN)
+    
+    if(MAJOR_LEN EQUAL 1)
+        set(VITA_VERSION_STR "0${VERSION_MAJOR}.0${VERSION_MINOR}")
+    else()
+        set(VITA_VERSION_STR "${VERSION_MAJOR}.0${VERSION_MINOR}")
+    endif()
+    
+    if(MINOR_LEN EQUAL 2)
+        set(VITA_VERSION_STR "${VERSION_MAJOR}.${VERSION_MINOR}")
+        if(MAJOR_LEN EQUAL 1)
+            set(VITA_VERSION_STR "0${VERSION_MAJOR}.${VERSION_MINOR}")
+        endif()
+    endif()
+    
+    # Simpler approach: just format it properly
+    if(VERSION_MAJOR LESS 10)
+        set(VITA_MAJOR_STR "0${VERSION_MAJOR}")
+    else()
+        set(VITA_MAJOR_STR "${VERSION_MAJOR}")
+    endif()
+    
+    if(VERSION_MINOR LESS 10)
+        set(VITA_MINOR_STR "0${VERSION_MINOR}")
+    else()
+        set(VITA_MINOR_STR "${VERSION_MINOR}")
+    endif()
+    
+    set(VITA_VERSION_STR "${VITA_MAJOR_STR}.${VITA_MINOR_STR}")
+endif()
+
 # Define TARGET_STR in the code
 add_definitions(-DTARGET_STR="${TARGET}")
+
+# PS Vita Title IDs (NJMU = NJEMU)
+if (PLATFORM STREQUAL "PSVITA")
+    if (${TARGET} STREQUAL "MVS")
+        set(VITA_TITLEID "NJMU00001")
+    elseif (${TARGET} STREQUAL "NCDZ")
+        set(VITA_TITLEID "NJMU00002")
+    elseif (${TARGET} STREQUAL "CPS1")
+        set(VITA_TITLEID "NJMU00003")
+    elseif (${TARGET} STREQUAL "CPS2")
+        set(VITA_TITLEID "NJMU00004")
+    endif()
+endif()
 
 # Set compiler flags
 if (USE_PG)
@@ -91,11 +160,11 @@ if (USE_PG)
 endif()
 
 # Enable interprocedural optimization LTO
-set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
+set(CMAKE_INTERPROCEDURAL_OPTIMIZATION FALSE)
 
 # Common Flags options
 set(COMMON_FLAGS
-    -O3 
+    -O0
     -ffast-math
 )
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
@@ -220,6 +289,12 @@ else()
     # Add source files related to GUI if needed
 endif()
 
+# Select video driver based on platform and options
+if (PLATFORM STREQUAL "PSVITA" AND USE_VITAGL)
+    set(VIDEO_SRC ${PLATFORM_LOWER}/${PLATFORM_LOWER}_video_gl.c)
+else()
+    set(VIDEO_SRC ${PLATFORM_LOWER}/${PLATFORM_LOWER}_video.c)
+endif()
 
 set(OS_SRC ${OS_SRC}
     ${PLATFORM_LOWER}/${PLATFORM_LOWER}.h
@@ -228,7 +303,7 @@ set(OS_SRC ${OS_SRC}
     ${PLATFORM_LOWER}/${PLATFORM_LOWER}_power.c
     ${PLATFORM_LOWER}/${PLATFORM_LOWER}_ui_text.c
     ${PLATFORM_LOWER}/${PLATFORM_LOWER}_input.c
-    ${PLATFORM_LOWER}/${PLATFORM_LOWER}_video.c
+    ${VIDEO_SRC}
     ${PLATFORM_LOWER}/${PLATFORM_LOWER}_audio.c
     ${PLATFORM_LOWER}/${PLATFORM_LOWER}_thread.c
 )
@@ -323,6 +398,41 @@ if (${TARGET} STREQUAL "CPS1")
     # Set SOUND_2151 flag for CPS1
     set(SOUND_2151 ON)
     # Set SOUND_QSOUND flag for CPS1
+    set(SOUND_QSOUND ON)
+endif()
+
+# Add specific target source files
+if (${TARGET} STREQUAL "CPS2")
+
+    include_directories(
+        src/cps2
+    )
+
+    set(TARGET_SRC ${TARGET_SRC}
+        common/coin.h
+        common/coin.c
+        cps2/cps2.h
+        cps2/cps2.c
+        cps2/cps2crpt.c
+        cps2/driver.h
+        cps2/driver.c
+        cps2/memintrf.h
+        cps2/memintrf.c
+        cps2/inptport.h
+        cps2/inptport.c
+        cps2/eeprom.h
+        cps2/eeprom.c
+        cps2/timer.h
+        cps2/timer.c
+        cps2/vidhrdw.h
+        cps2/vidhrdw.c
+        cps2/sprite.h
+        cps2/sprite_common.h
+        cps2/sprite_common.c
+        cps2/${PLATFORM_LOWER}_sprite.c
+    )
+
+    # Set SOUND_QSOUND flag for CPS2
     set(SOUND_QSOUND ON)
 endif()
 
@@ -457,6 +567,37 @@ elseif(PLATFORM STREQUAL "PSP")
         pspgu
         psppower
     )
+elseif(PLATFORM STREQUAL "PSVITA")
+    if (USE_VITAGL)
+        target_link_libraries(${TARGET} PUBLIC
+            vitaGL
+            vitashark
+            SceShaccCgExt
+            taihen_stub
+            SceShaccCg_stub
+            SceKernelDmacMgr_stub
+            mathneon
+            stdc++
+        )
+    else()
+        target_link_libraries(${TARGET} PUBLIC
+            vita2d
+        )
+    endif()
+    target_link_libraries(${TARGET} PUBLIC
+        SceDisplay_stub
+        SceGxm_stub
+        SceSysmodule_stub
+        SceCtrl_stub
+        SceAudio_stub
+        ScePower_stub
+        SceCommonDialog_stub
+        SceTouch_stub
+        SceHid_stub
+        SceAppMgr_stub
+        SceRtc_stub
+        m
+    )
 endif()
 
 # Add libmad library if needed
@@ -495,6 +636,15 @@ if(PLATFORM STREQUAL "PSP")
     )
 endif()
 
+# Create VPK package for PS Vita
+if(PLATFORM STREQUAL "PSVITA")
+    vita_create_self(${TARGET}.self ${TARGET})
+    vita_create_vpk(${TARGET}.vpk ${VITA_TITLEID} ${TARGET}.self
+        VERSION ${VITA_VERSION_STR}
+        NAME "${TARGET}"
+    )
+endif()
+
 # ==============================================================================
 # Install rules
 # ==============================================================================
@@ -509,6 +659,8 @@ if(PLATFORM STREQUAL "PSP")
     install(FILES ${CMAKE_BINARY_DIR}/EBOOT.PBP DESTINATION .)
 elseif(PLATFORM STREQUAL "PS2")
     install(PROGRAMS ${CMAKE_BINARY_DIR}/${TARGET} DESTINATION . RENAME ${TARGET}.elf)
+elseif(PLATFORM STREQUAL "PSVITA")
+    install(FILES ${CMAKE_BINARY_DIR}/${TARGET}.vpk DESTINATION .)
 else()
     install(TARGETS ${TARGET} DESTINATION .)
 endif()

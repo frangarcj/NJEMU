@@ -230,6 +230,9 @@ input_driver_t *input_drivers[] = {
 #ifdef DESKTOP
 	&input_desktop,
 #endif
+#ifdef PSVITA
+	&input_psvita,
+#endif
 	&input_null,
 	NULL,
 };

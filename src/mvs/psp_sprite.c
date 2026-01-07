@@ -172,7 +172,7 @@ void blit_draw_fix(int x, int y, uint32_t code, uint16_t attr)
 		idx = fix_insert_sprite(key);
 		dst = SWIZZLED8_8x8(tex_fix, idx);
 		src = &fix_memory[code << 5];
-		col = color_table[attr];
+		col = emu_color_table[attr];
 
 		while (lines--)
 		{
@@ -249,7 +249,7 @@ void blit_draw_spr(int x, int y, int w, int h, uint32_t code, uint16_t attr)
 		dst = SWIZZLED8_16x16(tex_spr[0], idx);
 		gfx3_offset = read_cache ? read_cache(code << 7) : code << 7;
 		src = &memory_region_gfx3[gfx3_offset];
-		col = color_table[(attr >> 8) & 0x0f];
+		col = emu_color_table[(attr >> 8) & 0x0f];
 
 		while (lines--)
 		{

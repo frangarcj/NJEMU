@@ -80,10 +80,16 @@ typedef struct rect_t
 
 enum WorkBuffer {
 	SCRBITMAP,
-	TEX_SPR0,
-	TEX_SPR1,
-	TEX_SPR2,
-	TEX_FIX,
+	TEX_OBJ,
+	TEX_SCR1,
+	TEX_SCR2,
+	TEX_SCR3,
+	TEX_SCRH,
+
+	TEX_SPR0 = TEX_OBJ,
+	TEX_SPR1 = TEX_SCR1,
+	TEX_SPR2 = TEX_SCR2,
+	TEX_FIX  = TEX_SCR3,
 };
 
 typedef struct video_driver
@@ -124,6 +130,7 @@ extern int platform_cpuclock;
 extern video_driver_t video_psp;
 extern video_driver_t video_ps2;
 extern video_driver_t video_desktop;
+extern video_driver_t video_psvita;
 extern video_driver_t video_null;
 
 extern video_driver_t *video_drivers[];

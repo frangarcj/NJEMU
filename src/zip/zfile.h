@@ -16,9 +16,9 @@
 
 struct zip_find_t
 {
-	char name[PATH_MAX];
+	uint32_t  crc32;
 	size_t  length;
-	uint64_t  crc32;
+	char name[PATH_MAX];
 };
 
 int zip_open(const char *path);
