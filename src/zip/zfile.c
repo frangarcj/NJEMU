@@ -135,7 +135,7 @@ int64_t zopen(const char *filename)
 
 	if (unzLocateFile(unzfile, filename) == UNZ_OK)
 		if (unzOpenCurrentFile(unzfile) == UNZ_OK)
-			return (long)unzfile;
+			return (int64_t)(uintptr_t)unzfile;
 
 	return -1;
 }

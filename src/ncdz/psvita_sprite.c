@@ -18,13 +18,13 @@ static RECT mvs_src_clip = { 24, 16, 24 + 304, 16 + 224 };
 
 static RECT mvs_clip[7] =
 {
-	{  0,  0,  0 + 640,  0 + 448 },	// option_stretch = 0  (640 x 448)
-	{ 88, 24, 88 + 304, 24 + 224 },	// option_stretch = 1  (304x224 19:14)
-	{ 80, 16, 80 + 320, 16 + 240 },	// option_stretch = 2  (320x240  4:3)
-	{ 60,  1, 60 + 360,  1 + 270 },	// option_stretch = 3  (360x270  4:3)
-	{ 57,  1, 57 + 360,  1 + 270 },	// option_stretch = 4  (366x270 19:14)
-	{ 30,  1, 30 + 420,  1 + 270 },	// option_stretch = 5  (420x270 14:9)
-	{  0,  1,  0 + 480,  1 + 270 }	// option_stretch = 6  (480x270 16:9)
+	{ 96, 48, 96 + 768, 48 + 448 },	// option_stretch = 0  (2x Integer Scale)
+	{ 117, 0, 117 + 726, 544 },	    // option_stretch = 1  (4:3 Fit Height)
+	{ 0,   0, 960,       544 },	    // option_stretch = 2  (Full Screen)
+	{ 0,   0, 960,       544 },	    // option_stretch = 3  (Full Screen)
+	{ 0,   0, 960,       544 },	    // option_stretch = 4  (Full Screen)
+	{ 272, 0, 272 + 416, 544 },  	// option_stretch = 5  (Vertical 3:4 approx)
+    { 0,   0, 960,       544 }      // option_stretch = 6
 };
 
 static struct Vertex ALIGN_DATA vertices_fix[FIX_MAX_SPRITES * 2];
@@ -151,7 +151,7 @@ void blit_draw_fix(int x, int y, uint32_t code, uint32_t attr)
 
 		idx = fix_insert_sprite(key);
 		src = &memory_region_gfx1[code << 5];
-		col = color_table[attr];
+		col = emu_color_table[attr];
 
 		row = idx / TILE_8x8_PER_LINE;
 		column = idx % TILE_8x8_PER_LINE;
@@ -215,7 +215,7 @@ void blit_draw_spr(int x, int y, int w, int h, uint32_t code, uint32_t attr)
 
 		src = &memory_region_gfx2[code << 7];
 		idx = spr_insert_sprite(key);
-		col = color_table[(attr >> 8) & 0x0f];
+		col = emu_color_table[(attr >> 8) & 0x0f];
 
 		row = idx / TILE_16x16_PER_LINE;
 		column = idx % TILE_16x16_PER_LINE;
@@ -280,13 +280,15 @@ void blit_finish_spr(void)
 
 	if (!spr_index) return;
 
-	struct Vertex vertex_buffer[spr_num];
+	// struct Vertex vertex_buffer[spr_num];
+    struct Vertex *vertex_buffer = (struct Vertex *)malloc(spr_num * sizeof(struct Vertex));
+    if (!vertex_buffer) return;
 
 	flags = *pflags;
 	workBuffer = getWorkBufferForSPR(flags & 3);
 	clut_tmp = &clut[flags & 0xf00];
 
-	vertices_tmp = vertices = &vertex_buffer[0];
+	vertices_tmp = vertices = vertex_buffer;
 
 	for (i = 0; i < spr_num; i += 2)
 	{
@@ -312,9 +314,12 @@ void blit_finish_spr(void)
 		pflags++;
 	}
 
-	if (total_sprites)
+    if (total_sprites)
 		video_driver->blitTexture(video_data, workBuffer, clut_tmp, 0, total_sprites, vertices);
+
+    free(vertex_buffer);
 }
+
 
 
 /******************************************************************************

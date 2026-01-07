@@ -80,10 +80,16 @@ typedef struct rect_t
 
 enum WorkBuffer {
 	SCRBITMAP,
-	TEX_SPR0,
-	TEX_SPR1,
-	TEX_SPR2,
-	TEX_FIX,
+	TEX_OBJ,
+	TEX_SCR1,
+	TEX_SCR2,
+	TEX_SCR3,
+	TEX_SCRH,
+
+	TEX_SPR0 = TEX_OBJ,
+	TEX_SPR1 = TEX_SCR1,
+	TEX_SPR2 = TEX_SCR2,
+	TEX_FIX  = TEX_SCR3,
 };
 
 typedef struct video_driver

@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.1)
+cmake_minimum_required(VERSION 3.12)
 
 project(NJEMU)
 
@@ -69,7 +69,8 @@ option(RELEASE "Release" OFF)
 option(SYSTEM_BUTTONS "System Buttons" OFF)
 option(USE_ASAN "Use ASAN" OFF)
 option(USE_PG "Use Performance Graph" OFF)
-option(USE_VITAGL "Use VitaGL for PS Vita (OpenGL rendering)" OFF)
+option(USE_VITAGL "Use VitaGL instead of vita2d (OpenGL rendering)" OFF)
+option(USE_SCE_CLIB_PRINTF "Use sceClibPrintf instead of printf on PS Vita" ON)
 
 # Add options to compiler definitions
 if (NO_GUI)
@@ -78,6 +79,10 @@ endif()
 
 if (USE_VITAGL AND PLATFORM STREQUAL "PSVITA")
     add_definitions(-DUSE_VITAGL)
+endif()
+
+if (USE_SCE_CLIB_PRINTF AND PLATFORM STREQUAL "PSVITA")
+    add_definitions(-DUSE_SCE_CLIB_PRINTF)
 endif()
 
 # Version
@@ -155,11 +160,11 @@ if (USE_PG)
 endif()
 
 # Enable interprocedural optimization LTO
-set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
+set(CMAKE_INTERPROCEDURAL_OPTIMIZATION FALSE)
 
 # Common Flags options
 set(COMMON_FLAGS
-    -O3 
+    -O0
     -ffast-math
 )
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
@@ -397,6 +402,41 @@ if (${TARGET} STREQUAL "CPS1")
 endif()
 
 # Add specific target source files
+if (${TARGET} STREQUAL "CPS2")
+
+    include_directories(
+        src/cps2
+    )
+
+    set(TARGET_SRC ${TARGET_SRC}
+        common/coin.h
+        common/coin.c
+        cps2/cps2.h
+        cps2/cps2.c
+        cps2/cps2crpt.c
+        cps2/driver.h
+        cps2/driver.c
+        cps2/memintrf.h
+        cps2/memintrf.c
+        cps2/inptport.h
+        cps2/inptport.c
+        cps2/eeprom.h
+        cps2/eeprom.c
+        cps2/timer.h
+        cps2/timer.c
+        cps2/vidhrdw.h
+        cps2/vidhrdw.c
+        cps2/sprite.h
+        cps2/sprite_common.h
+        cps2/sprite_common.c
+        cps2/${PLATFORM_LOWER}_sprite.c
+    )
+
+    # Set SOUND_QSOUND flag for CPS2
+    set(SOUND_QSOUND ON)
+endif()
+
+# Add specific target source files
 if (${TARGET} STREQUAL "NCDZ")
     include_directories(
         src/ncdz
@@ -535,7 +575,9 @@ elseif(PLATFORM STREQUAL "PSVITA")
             SceShaccCgExt
             taihen_stub
             SceShaccCg_stub
+            SceKernelDmacMgr_stub
             mathneon
+            stdc++
         )
     else()
         target_link_libraries(${TARGET} PUBLIC
@@ -552,6 +594,8 @@ elseif(PLATFORM STREQUAL "PSVITA")
         SceCommonDialog_stub
         SceTouch_stub
         SceHid_stub
+        SceAppMgr_stub
+        SceRtc_stub
         m
     )
 endif()

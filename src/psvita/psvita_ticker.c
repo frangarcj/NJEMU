@@ -9,8 +9,7 @@
 #include "emumain.h"
 #include "common/ticker_driver.h"
 
-#include <psp2/rtc.h>
-#include <psp2/kernel/threadmgr.h>
+#include <psp2/kernel/processmgr.h>
 #include <stdlib.h>
 
 typedef struct psvita_ticker {
@@ -27,9 +26,7 @@ static void psvita_ticker_free(void *data) {
 }
 
 static uint64_t psvita_currentUs(void *data) {
-	uint64_t tick;
-	sceRtcGetCurrentTick(&tick);
-	return tick;
+	return sceKernelGetProcessTimeWide();
 }
 
 ticker_driver_t ticker_psvita = {

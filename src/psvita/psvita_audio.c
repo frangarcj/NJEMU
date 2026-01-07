@@ -7,6 +7,7 @@
 ******************************************************************************/
 
 #include "emumain.h"
+#include "common/audio_driver.h"
 
 #include <psp2/audioout.h>
 #include <psp2/kernel/threadmgr.h>
@@ -109,6 +110,9 @@ static void psvita_audio_srcOutputBlocking(void *data, int32_t volume, void *buf
 	}
 	
 	memcpy(psvita->audio_buffer, buffer, samples * psvita->channels * sizeof(int16_t));
+    if (samples < psvita->sample_count) {
+        memset(psvita->audio_buffer + (samples * psvita->channels), 0, (psvita->sample_count - samples) * psvita->channels * sizeof(int16_t));
+    }
 	
 	// Set volume
 	int vols[2] = { volume, volume };

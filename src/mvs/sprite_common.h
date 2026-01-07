@@ -76,7 +76,7 @@ extern uint8_t *tex_fix;
 extern uint8_t *tex_spr[3];
 extern uint16_t *clut;
 
-extern const uint32_t ALIGN_DATA color_table[16];
+extern const uint32_t ALIGN_DATA emu_color_table[16];
 extern const uint8_t zoom_x_tables[][16];
 
 /******************************************************************************

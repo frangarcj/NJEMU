@@ -1,8 +1,10 @@
 /******************************************************************************
 
-	sprite.c
+	psvita_sprite.c
 
-	MVS Sprite Manager - Desktop (SDL) Platform
+	MVS Sprite Manager - PS Vita Platform
+	
+	Based on desktop_sprite.c
 
 ******************************************************************************/
 
@@ -16,16 +18,17 @@
 
 static RECT mvs_src_clip = { 24, 16, 24 + 304, 16 + 224 };
 
-static RECT mvs_clip[7] =
+// PS Vita: 960x544 resolution
+static RECT mvs_clip[6] =
 {
-    {  0,  0,  0 + 640,  0 + 480 }, // option_stretch = 5  (480x270 16:9)
-	{ 88, 24, 88 + 304, 24 + 224 },	// option_stretch = 0  (304x224 19:14)
-	{ 80, 16, 80 + 320, 16 + 240 },	// option_stretch = 1  (320x240  4:3)
-	{ 60,  1, 60 + 360,  1 + 270 },	// option_stretch = 2  (360x270  4:3)
-	{ 57,  1, 57 + 360,  1 + 270 },	// option_stretch = 3  (366x270 19:14)
-	{ 30,  1, 30 + 420,  1 + 270 },	// option_stretch = 4  (420x270 14:9)
-	{  0,  1,  0 + 480,  1 + 270 }	    // option_stretch = 5  (480x270 16:9)
+	{ 24, 16, 24 + 304, 16 + 224 },	// option_stretch = 0
+	{ 24, 16, 24 + 320, 16 + 240 },	// option_stretch = 1 (Using 320 width for safety)
+	{ 24, 16, 24 + 320, 16 + 240 },	// option_stretch = 2
+	{ 24, 16, 24 + 320, 16 + 240 },	// option_stretch = 3
+	{ 24, 16, 24 + 320, 16 + 240 },	// option_stretch = 4
+	{ 24, 16, 24 + 320, 16 + 240 }	// option_stretch = 5
 };
+
 
 static struct Vertex ALIGN_DATA vertices_fix[FIX_MAX_SPRITES * 2];
 static uint16_t ALIGN_DATA spr_flags[SPR_MAX_SPRITES];
@@ -139,6 +142,10 @@ void blit_finish(void)
 	Add FIX to draw list
 ------------------------------------------------------------------------*/
 
+/*------------------------------------------------------------------------
+	Add FIX to draw list
+------------------------------------------------------------------------*/
+
 void blit_draw_fix(int x, int y, uint32_t code, uint16_t attr)
 {
 	int16_t idx;
@@ -155,7 +162,7 @@ void blit_draw_fix(int x, int y, uint32_t code, uint16_t attr)
 
 		idx = fix_insert_sprite(key);
 		src = &fix_memory[code << 5];
-		col = color_table[attr];
+		col = emu_color_table[attr];
 
 		row = idx / TILE_8x8_PER_LINE;
 		column = idx % TILE_8x8_PER_LINE;
@@ -167,6 +174,9 @@ void blit_draw_fix(int x, int y, uint32_t code, uint16_t attr)
 			*(uint32_t *)(dst +  4) = ((tile >> 4) & 0x0f0f0f0f) | col;
 			src += 4;
 		}
+		// Upload FIX tile using copyRect (Sync Shadow to VRAM)
+		RECT r = {column * 8, row * 8, column * 8 + 8, row * 8 + 8};
+		video_driver->copyRect(video_data, tex_fix, tex_fix, &r, &r);
 	}
 
 	vertices = &vertices_fix[fix_num];
@@ -226,9 +236,9 @@ void blit_draw_spr(int x, int y, int w, int h, uint32_t code, uint16_t attr)
 		}
 
 		idx = spr_insert_sprite(key);
-        gfx3_offset = read_cache ? read_cache(code << 7) : code << 7;
+		gfx3_offset = read_cache ? read_cache(code << 7) : code << 7;
 		src = &memory_region_gfx3[gfx3_offset];
-		col = color_table[(attr >> 8) & 0x0f];
+		col = emu_color_table[(attr >> 8) & 0x0f];
 
 		row = idx / TILE_16x16_PER_LINE;
 		column = idx % TILE_16x16_PER_LINE;
@@ -243,6 +253,15 @@ void blit_draw_spr(int x, int y, int w, int h, uint32_t code, uint16_t attr)
 			*(uint32_t *)(dst +  8) = ((tile >> 0) & 0x0f0f0f0f) | col;
 			*(uint32_t *)(dst + 12) = ((tile >> 4) & 0x0f0f0f0f) | col;
 			src += 8;
+		}
+		
+		// Upload SPR tile with Bank selection (assuming 512 height)
+		int y_global = row * 16;
+		int buf_idx = y_global / 512;
+		int y_local = y_global % 512;
+		if (buf_idx <= 2) {
+			RECT r = {column * 16, y_local, column * 16 + 16, y_local + 16};
+			video_driver->copyRect(video_data, tex_spr[buf_idx], tex_spr[buf_idx], &r, &r);
 		}
 	}
 
@@ -272,14 +291,10 @@ void blit_draw_spr(int x, int y, int w, int h, uint32_t code, uint16_t attr)
 
 static enum WorkBuffer getWorkBufferForSPR(uint8_t index) {
 	switch (index) {
-		case 0:
-			return TEX_SPR0;
-		case 1:
-			return TEX_SPR1;
-		case 2:
-			return TEX_SPR2;
-		default:
-			return TEX_SPR0;
+		case 0: return TEX_SPR0;
+		case 1: return TEX_SPR1;
+		case 2: return TEX_SPR2;
+		default: return TEX_SPR0;
 	}
 }
 
@@ -293,13 +308,15 @@ void blit_finish_spr(void)
 
 	if (!spr_index) return;
 
-	struct Vertex vertex_buffer[spr_num];
+	// Use heap allocation instead of VLA for safety
+	struct Vertex *vertex_buffer = (struct Vertex *)malloc(spr_num * sizeof(struct Vertex));
+	if (!vertex_buffer) return;
 
 	flags = *pflags;
 	workBuffer = getWorkBufferForSPR(flags & 3);
 	clut_tmp = &clut[flags & 0xf00];
 
-	vertices_tmp = vertices = &vertex_buffer[0];
+	vertices_tmp = vertices = vertex_buffer;
 
 	for (i = 0; i < spr_num; i += 2)
 	{
@@ -327,6 +344,8 @@ void blit_finish_spr(void)
 
 	if (total_sprites)
 		video_driver->blitTexture(video_data, workBuffer, clut_tmp, 0, total_sprites, vertices);
+
+	free(vertex_buffer);
 }
 
 
@@ -336,12 +355,12 @@ void blit_finish_spr(void)
 
 void blit_draw_spr_line(int x, int y, int zoom_x, int sprite_y, uint32_t code, uint16_t attr, uint8_t opaque)
 {
-    uint32_t gfx3_offset = read_cache ? read_cache(code << 7): code << 7;
+	uint32_t gfx3_offset = read_cache ? read_cache(code << 7): code << 7;
 	uint32_t dst = (y << 9) + x;
 	uint8_t flag = (attr & 1) | (opaque & SPRITE_OPAQUE) | ((zoom_x & 0x10) >> 2);
 
 	if (attr & 0x0002) sprite_y ^= 0x0f;
-    gfx3_offset += sprite_y << 3;
+	gfx3_offset += sprite_y << 3;
 
 	(*drawgfxline[flag])((uint32_t *)&memory_region_gfx3[gfx3_offset], &scrbitmap[dst], &video_palette[(attr >> 8) << 4], zoom_x);
 }

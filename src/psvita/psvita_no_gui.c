@@ -11,6 +11,12 @@
 #include "stdarg.h"
 
 
+#ifdef PSVITA
+#include <unistd.h>
+#include <psp2/io/fcntl.h>
+#include <psp2/io/stat.h>
+#endif
+
 UI_PALETTE ui_palette[UI_PAL_MAX] =
 {
 	{ 255, 255, 255 },	// UI_PAL_TITLE
@@ -32,16 +38,6 @@ gamecheat_t* gamecheat[MAX_CHEATS];
 int bgimage_type;
 int bgimage_blightness;
 #endif
-
-void msg_printf(const char *text, ...) {
-	// Let's use directly printf instead
-	va_list args;
-    va_start(args, text);
-
-    vprintf(text, args);  // Use vprintf to handle variable arguments
-
-    va_end(args);
-}
 
 void show_progress(const char *text)
 {
@@ -83,21 +79,91 @@ int ui_show_popup(int draw) {
 
 void file_browser(void) {
 	Loop = LOOP_EXEC;
+#ifdef PSVITA
+	char base_dir[PATH_MAX];
+	#if (EMU_SYSTEM == MVS)
+		strcpy(base_dir, "ux0:/data/mvs");
+	#elif (EMU_SYSTEM == CPS1)
+		strcpy(base_dir, "ux0:/data/cps1");
+	#elif (EMU_SYSTEM == CPS2)
+		strcpy(base_dir, "ux0:/data/cps2");
+	#elif (EMU_SYSTEM == NCDZ)
+		strcpy(base_dir, "ux0:/data/ncdz");
+	#else
+		strcpy(base_dir, "ux0:/data/NJEMU");
+	#endif
+
+	// Create base directory before chdir
+	sceIoMkdir(base_dir, 0777);
+	
+	printf("NJEMU Debug: Changing directory to %s\n", base_dir);
+	if (chdir(base_dir) != 0) {
+		printf("NJEMU Debug: FAILED to chdir to %s\n", base_dir);
+	}
+
+	// Set global directory variables using relative paths
+	strcpy(launchDir, "./");
 	strcpy(game_dir, "roms");
-#if USE_CACHE
+	strcpy(screenshotDir, "pict");
+	#if USE_CACHE
+	strcpy(cache_dir, "cache");
+	#endif
+
+	// Create subdirectories relative to base_dir
+	sceIoMkdir(game_dir, 0777);
+	sceIoMkdir(screenshotDir, 0777);
+	#if USE_CACHE
+	sceIoMkdir(cache_dir, 0777);
+	#endif
+
+	// Create other subdirs used by the core
+	sceIoMkdir("state", 0777);
+	sceIoMkdir("config", 0777);
+	sceIoMkdir("nvram", 0777);
+	sceIoMkdir("memcard", 0777);
+
+	printf("NJEMU Debug: launchDir: %s\n", launchDir);
+	printf("NJEMU Debug: game_dir: %s\n", game_dir);
+#else
+	strcpy(game_dir, "roms");
+	#if USE_CACHE
 	sprintf(cache_dir, "cache");
+	#endif
 #endif
+
 	// Get the game name from a file called game_name.ini
+	// Try to find it in the app dir or the data dir
+	printf("NJEMU Debug: Searching for game_name.ini...\n");
 	FILE *fp = fopen("game_name.ini", "r");
+	if (!fp) {
+		char ini_path[PATH_MAX];
+		sprintf(ini_path, "%sgame_name.ini", launchDir);
+		printf("NJEMU Debug: Not found in current dir, trying %s\n", ini_path);
+		fp = fopen(ini_path, "r");
+	}
+
 	if (fp) {
 		fgets(game_name, 255, fp);
 		fclose(fp);
+		// Remove newline if present
+		char *p = strchr(game_name, '\n');
+		if (p) *p = 0;
+		p = strchr(game_name, '\r');
+		if (p) *p = 0;
+		printf("NJEMU Debug: Found game_name: [%s]\n", game_name);
+	} else {
+		printf("NJEMU Debug: game_name.ini NOT FOUND!\n");
 	}
+
 #if (EMU_SYSTEM == NCDZ)
-	strcat(game_dir, "/");
-	strcat(game_dir, game_name);
+	// For NCDZ, game_dir usually points to the game specific folder
+	char ncdz_game_dir[PATH_MAX];
+	sprintf(ncdz_game_dir, "%s/%s", game_dir, game_name);
+	strcpy(game_dir, ncdz_game_dir);
+	sceIoMkdir(game_dir, 0777);
 
 	sprintf(mp3_dir, "%s/mp3", game_dir);
+	sceIoMkdir(mp3_dir, 0777);
 #endif
 	emu_main();
 }

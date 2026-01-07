@@ -155,7 +155,7 @@ void blit_draw_fix(int x, int y, uint32_t code, uint16_t attr)
 
 		idx = fix_insert_sprite(key);
 		src = &fix_memory[code << 5];
-		col = color_table[attr];
+		col = emu_color_table[attr];
 
 		row = idx / TILE_8x8_PER_LINE;
 		column = idx % TILE_8x8_PER_LINE;
@@ -228,7 +228,7 @@ void blit_draw_spr(int x, int y, int w, int h, uint32_t code, uint16_t attr)
 		idx = spr_insert_sprite(key);
         gfx3_offset = read_cache ? read_cache(code << 7) : code << 7;
 		src = &memory_region_gfx3[gfx3_offset];
-		col = color_table[(attr >> 8) & 0x0f];
+		col = emu_color_table[(attr >> 8) & 0x0f];
 
 		row = idx / TILE_16x16_PER_LINE;
 		column = idx % TILE_16x16_PER_LINE;

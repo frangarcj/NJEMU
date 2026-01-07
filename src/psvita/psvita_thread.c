@@ -21,7 +21,7 @@ typedef struct psvita_thread {
 
 static int childThread(SceSize args, void *argp) {
 	int32_t res;
-	psvita_thread_t *psvita = (psvita_thread_t *)argp;
+	psvita_thread_t *psvita = *(psvita_thread_t **)argp;
 	sceKernelWaitSema(psvita->start_sema, 1, NULL);
 	res = psvita->threadFunc(0, NULL);
 	sceKernelSignalSema(psvita->end_sema, 1);

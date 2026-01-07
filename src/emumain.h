@@ -175,6 +175,9 @@ extern UI_PALETTE ui_palette[UI_PAL_MAX];
 #if defined(DESKTOP)
 #include "desktop/desktop.h"
 #endif
+#if defined(PSVITA)
+#include "psvita/psvita.h"
+#endif
 
 #include "include/osd_cpu.h"
 #include "include/cpuintrf.h"
@@ -184,6 +187,7 @@ extern UI_PALETTE ui_palette[UI_PAL_MAX];
 #include "common/loadrom.h"
 #include "common/state.h"
 #include "common/sound.h"
+#include "common/audio_driver.h"
 #include "common/power_driver.h"
 #include "common/ticker_driver.h"
 #include "common/platform_driver.h"

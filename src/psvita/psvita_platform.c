@@ -11,12 +11,14 @@
 #include <psp2/kernel/processmgr.h>
 #include <psp2/io/fcntl.h>
 #include <psp2/io/dirent.h>
+#include <psp2/io/stat.h>
 
 typedef struct psvita_platform {
 } psvita_platform_t;
 
 static void *psvita_init(void) {
 	psvita_platform_t *psvita = (psvita_platform_t*)calloc(1, sizeof(psvita_platform_t));
+	option_samplerate = 2; // Default to 44kHz
 
 	return psvita;
 }
@@ -28,24 +30,7 @@ static void psvita_free(void *data) {
 }
 
 static void psvita_main(void *data, int argc, char *argv[]) {
-	psvita_platform_t *psvita = (psvita_platform_t*)data;
-    
-	getcwd(screenshotDir, sizeof(screenshotDir));
-    strcat(screenshotDir, "/PICTURE");
-    sceIoMkdir(screenshotDir, 0777);
-#if	(EMU_SYSTEM == CPS1)
-	strcat(screenshotDir, "/CPS1");
-#endif
-#if	(EMU_SYSTEM == CPS2)
-	strcat(screenshotDir, "/CPS2");
-#endif
-#if	(EMU_SYSTEM == MVS)
-	strcat(screenshotDir, "/MVS");
-#endif
-#if	(EMU_SYSTEM == NCDZ)
-	strcat(screenshotDir, "/NCDZ");
-#endif
-	sceIoMkdir(screenshotDir, 0777);
+	// psvita_platform_t *psvita = (psvita_platform_t*)data;
 }
 
 static bool psvita_startSystemButtons(void *data) {

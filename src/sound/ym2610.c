@@ -2924,8 +2924,13 @@ void YM2610Init(int clock, void *pcmroma, int pcmsizea,
 {
 	sound->stack     = 0x10000;
 	sound->channels  = 2;
+#if defined(__vita__)
+	sound->frequency = 48000;
+	sound->samples   = SOUND_SAMPLES_48000;
+#else
 	sound->frequency = 44100;
 	sound->samples   = SOUND_SAMPLES_44100;
+#endif
 	sound->callback  = YM2610Update;
 
 	/* clear */
