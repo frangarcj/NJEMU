@@ -1447,6 +1447,7 @@ void cps1_screenrefresh(void)
 
 	cps1_check_scroll2_distort(video_ctrl & 1);
 
+	blit_set_scene_order(l0, l1, l2, l3, video_ctrl & 1);
 	blit_start(cps1_high_layer);
 
 	if (cps1_has_stars) cps1_render_stars(layer_ctrl);

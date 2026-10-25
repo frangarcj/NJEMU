@@ -60,6 +60,7 @@ typedef struct hw_cmd {
 	const void *clut;			/* CLUT chunk bound as the palette */
 	uint32_t first_quad;
 	uint32_t quads;
+	uint8_t plane;				/* VIDEO_PLANE_* scene hint */
 } hw_cmd_t;
 
 /* A texture layer as seen by the recorder. */
@@ -104,6 +105,7 @@ typedef struct hw_recorder {
 	hw_cmd_t batch;
 	RECT clip;
 	bool depth_test;
+	uint8_t plane;
 
 	/* Statistics */
 	uint32_t stat_clut_rows;
@@ -122,6 +124,8 @@ void hw_rec_begin_work(hw_recorder_t *rec, uint16_t bg555);
 
 void hw_rec_set_clip(hw_recorder_t *rec, int left, int top, int right, int bottom);
 void hw_rec_set_depth_test(hw_recorder_t *rec, bool enable);
+/* Scene plane (VIDEO_PLANE_*) of the following draws; a change closes the draw. */
+void hw_rec_set_plane(hw_recorder_t *rec, uint8_t plane);
 
 void hw_rec_blit(hw_recorder_t *rec, const hw_layer_t *layer, const uint16_t *clut,
 				 const video_sprite_vertex_t *vertices, uint32_t count);

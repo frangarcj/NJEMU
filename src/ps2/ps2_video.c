@@ -2768,4 +2768,5 @@ video_driver_t video_ps2 = {
 	ps2_setOutputMode,
 	ps2_flushAndWait,
 	ps2_getNativeContext,
+	NULL, // setScenePlane
 };

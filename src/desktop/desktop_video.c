@@ -1082,4 +1082,5 @@ video_driver_t video_desktop_sdl = {
 	NULL, // setOutputMode
 	NULL, // flushAndWait
 	NULL, // getNativeContext
+	NULL, // setScenePlane
 };

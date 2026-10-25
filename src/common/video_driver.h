@@ -224,7 +224,23 @@ typedef struct video_driver
 	 * only while its video data is alive. Common code must not interpret it. */
 	void *(*getNativeContext)(void *data);
 
+	/* Optional scene hint for depth-aware presentation (the Desktop OpenGL
+	 * HD-2D prototype): the VIDEO_PLANE_* kind of the following blits. For
+	 * VIDEO_PLANE_FLOOR, `horizon` is the work-frame row where the floor
+	 * starts. Backends without such a presentation leave it NULL. */
+	void (*setScenePlane)(void *data, uint8_t plane, int16_t horizon);
+
 } video_driver_t;
+
+enum {
+	VIDEO_PLANE_NONE,			/* clears, untagged draws */
+	VIDEO_PLANE_FAR,			/* distant background */
+	VIDEO_PLANE_MID,			/* between the distance and the stage */
+	VIDEO_PLANE_BACK,			/* stage behind the action */
+	VIDEO_PLANE_FLOOR,			/* ground receding from the viewer */
+	VIDEO_PLANE_FOCUS,			/* characters, effects and HUD */
+	VIDEO_PLANE_COUNT
+};
 
 typedef struct video_backend_choice
 {

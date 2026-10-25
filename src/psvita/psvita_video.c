@@ -697,7 +697,7 @@ static void v2d_present_sharp(psvita_video_t *v, const RECT *src_rect, const REC
     }
     /* The target is opaque with alpha 0, which the inverted blend keeps. */
     const hw_cmd_t quad = { HW_PROG_DIRECT, HW_DEPTH_OFF, (uint16_t)w, (uint16_t)h,
-        &v->sharp->gxm_tex, q, NULL, 0, 1 };
+        &v->sharp->gxm_tex, q, NULL, 0, 1, VIDEO_PLANE_NONE };
     v2d_replay_draw(v, &quad, row_x, row_y);
 }
 

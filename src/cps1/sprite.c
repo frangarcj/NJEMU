@@ -66,6 +66,15 @@ static video_sprite_vertex_t __attribute__((aligned(64)))
 	vertices_scrollh[SCROLLH_MAX_SPRITES * 2];
 static video_point_vertex_t *vertices_stars;
 
+/* Work-frame row of the floor's horizon, or -1. It is found from the thin
+ * row-scroll bands and kept while row scroll stays on: a centred camera
+ * scrolls every floor row alike, which merges them into one band. */
+static int16_t scroll2_floor_top;
+static int16_t scroll2_floor_found;		/* first thin band of this frame */
+static bool scroll2_row_scroll;
+/* VIDEO_PLANE_* of scroll1..3 in this frame (index = layer number). */
+static uint8_t scroll_plane[4];
+
 /******************************************************************************
 	Portable helpers
 ******************************************************************************/
@@ -79,6 +88,38 @@ static int16_t cps_view_left(void)
 static int16_t cps_view_right(void)
 {
 	return (int16_t)(448 + cps1_wide_margin - cps1_wide_bias);
+}
+
+/* Scene hint for depth-aware backends: what the next blits draw. */
+static void cps_scene_plane(uint8_t plane)
+{
+	if (video_driver->setScenePlane)
+		video_driver->setScenePlane(video_data, plane, scroll2_floor_top);
+}
+
+/* Row scroll splits scroll2 into bands. The thin bands below the upper part
+ * of the screen are the floor, whose rows the game scrolls at growing speed
+ * to fake perspective. */
+static void cps_scroll2_find_floor(void)
+{
+	if (scroll2_max_y - scroll2_min_y <= 8 && scroll2_min_y >= 96 && scroll2_floor_found < 0) {
+		scroll2_floor_found = scroll2_min_y;
+		if (scroll2_floor_top < 0)
+			scroll2_floor_top = scroll2_min_y;
+	}
+}
+
+/* The current band from row `top` to `bottom` on `plane`. */
+static void cps_blit_scroll2(int16_t top, int16_t bottom, uint8_t plane)
+{
+	video_driver->scissor(video_data, cps_view_left(), top, cps_view_right(), bottom);
+	cps_scene_plane(plane);
+	if (scroll2_clut0_num)
+		video_driver->blitSpriteVertices(video_data, TEXTURE_LAYER_SCROLL2,
+			&clut[64 << 4], 0, scroll2_clut0_num, vertices_scroll2_clut0);
+	if (scroll2_clut1_num)
+		video_driver->blitSpriteVertices(video_data, TEXTURE_LAYER_SCROLL2,
+			&clut[80 << 4], 0, scroll2_clut1_num, vertices_scroll2_clut1);
 }
 
 static RECT cps_presentation_rect(int native_width, int native_height)
@@ -235,6 +276,28 @@ void blit_reset(int bank_scroll1, int bank_scroll2, int bank_scroll3,
 	blit_clear_all_sprite();
 }
 
+/* Depth follows the drawing order (LAYER_SKIP layers are negative): the
+ * scroll layers drawn before the objects recede from the last of them, the
+ * stage, to the first, the distance; layers drawn over the objects are part
+ * of the action. */
+void blit_set_scene_order(int l0, int l1, int l2, int l3, int row_scroll)
+{
+	const int order[4] = { l0, l1, l2, l3 };
+	int behind[3];
+	int count = 0;
+	int i;
+
+	scroll2_row_scroll = row_scroll != 0;
+	for (i = 1; i < 4; i++)
+		scroll_plane[i] = VIDEO_PLANE_FOCUS;
+	for (i = 0; i < 4 && order[i] != 0; i++)
+		if (order[i] > 0 && count < 3)
+			behind[count++] = order[i];
+	for (i = 0; i < count; i++)
+		scroll_plane[behind[i]] = i == count - 1 ? VIDEO_PLANE_BACK :
+			i == 0 ? VIDEO_PLANE_FAR : VIDEO_PLANE_MID;
+}
+
 void blit_start(int high_layer)
 {
 	if (scrollh_texture_clear || high_layer != scrollh_layer_number) {
@@ -257,6 +320,10 @@ void blit_start(int high_layer)
 
 	video_driver->beginFrame(video_data);
 	video_driver->startWorkFrame(video_data, 0);
+	if (!scroll2_row_scroll)
+		scroll2_floor_top = -1;
+	scroll2_floor_found = -1;
+	cps_scene_plane(VIDEO_PLANE_NONE);
 	video_driver->scissor(video_data, cps_view_left(), 16, cps_view_right(), 240);
 	if (cps1_palette_upload_needed()) {
 		video_driver->uploadClut(video_data, clut, 0);
@@ -269,6 +336,9 @@ void blit_finish(void)
 	RECT dst_clip;
 	const bool rotates_to_upright = cps_orientation_rotates_to_upright(
 		machine_screen_type == SCREEN_VERTICAL, cps_screen_orientation);
+
+	if (scroll2_floor_found >= 0)
+		scroll2_floor_top = scroll2_floor_found;
 
 	cps_src_clip.left = cps_view_left();
 	cps_src_clip.right = cps_view_right();
@@ -359,6 +429,7 @@ void blit_finish_object(void)
 		object_batches[object_batch_count - 1].count =
 			object_num - object_batches[object_batch_count - 1].start;
 	video_driver->commitTextureUpdates(video_data, TEXTURE_LAYER_OBJECT);
+	cps_scene_plane(VIDEO_PLANE_FOCUS);
 	if (video_driver->prepareSpriteVertices)
 		video_driver->prepareSpriteVertices(video_data, object_num, vertices_object);
 	for (i = 0; i < object_batch_count; i++) {
@@ -403,6 +474,7 @@ void blit_finish_scroll1(void)
 {
 	if (!scroll1_clut0_num && !scroll1_clut1_num) return;
 	video_driver->commitTextureUpdates(video_data, TEXTURE_LAYER_SCROLL1);
+	cps_scene_plane(scroll_plane[1]);
 	if (scroll1_clut0_num) {
 		if (video_driver->prepareSpriteVertices)
 			video_driver->prepareSpriteVertices(video_data, scroll1_clut0_num,
@@ -455,15 +527,20 @@ void blit_draw_scroll2(int16_t x, int16_t y, uint32_t code, uint16_t attr)
 
 void blit_finish_scroll2(void)
 {
+	int16_t floor_top;
+
+	cps_scroll2_find_floor();
 	if (!scroll2_clut0_num && !scroll2_clut1_num) return;
-	video_driver->scissor(video_data, cps_view_left(), scroll2_min_y, cps_view_right(), scroll2_max_y);
+	floor_top = scroll2_floor_top;
 	video_driver->commitTextureUpdates(video_data, TEXTURE_LAYER_SCROLL2);
-	if (scroll2_clut0_num)
-		video_driver->blitSpriteVertices(video_data, TEXTURE_LAYER_SCROLL2,
-			&clut[64 << 4], 0, scroll2_clut0_num, vertices_scroll2_clut0);
-	if (scroll2_clut1_num)
-		video_driver->blitSpriteVertices(video_data, TEXTURE_LAYER_SCROLL2,
-			&clut[80 << 4], 0, scroll2_clut1_num, vertices_scroll2_clut1);
+	/* A band reaching below the horizon is drawn twice, clipped to each side. */
+	if (floor_top > scroll2_min_y && floor_top < scroll2_max_y) {
+		cps_blit_scroll2(scroll2_min_y, floor_top, scroll_plane[2]);
+		cps_blit_scroll2(floor_top, scroll2_max_y, VIDEO_PLANE_FLOOR);
+	} else {
+		cps_blit_scroll2(scroll2_min_y, scroll2_max_y,
+			floor_top >= 0 && scroll2_min_y >= floor_top ? VIDEO_PLANE_FLOOR : scroll_plane[2]);
+	}
 	video_driver->scissor(video_data, cps_view_left(), 16, cps_view_right(), 240);
 	/* Each row-scroll band is an independent draw. Keeping previous bands in
 	 * these arrays makes later bands resubmit all earlier vertices under a new
@@ -505,6 +582,7 @@ void blit_finish_scroll3(void)
 {
 	if (!scroll3_clut0_num && !scroll3_clut1_num) return;
 	video_driver->commitTextureUpdates(video_data, TEXTURE_LAYER_SCROLL3);
+	cps_scene_plane(scroll_plane[3]);
 	if (scroll3_clut0_num) {
 		if (video_driver->prepareSpriteVertices)
 			video_driver->prepareSpriteVertices(video_data, scroll3_clut0_num,
@@ -576,6 +654,8 @@ void blit_finish_scroll2h(void)
 {
 	if (!scrollh_num) return;
 	video_driver->commitTextureUpdates(video_data, TEXTURE_LAYER_SCROLLH);
+	cps_scene_plane(scroll2_floor_top >= 0 && scroll2_min_y >= scroll2_floor_top ?
+		VIDEO_PLANE_FLOOR : VIDEO_PLANE_FOCUS);
 	video_driver->scissor(video_data, cps_view_left(), scroll2_min_y, cps_view_right(), scroll2_max_y);
 	video_driver->blitSpriteVertices(video_data, TEXTURE_LAYER_SCROLLH,
 		NULL, 0, scrollh_num, vertices_scrollh);
@@ -612,6 +692,7 @@ void blit_finish_scrollh(void)
 {
 	if (!scrollh_num) return;
 	video_driver->commitTextureUpdates(video_data, TEXTURE_LAYER_SCROLLH);
+	cps_scene_plane(VIDEO_PLANE_FOCUS);
 	video_driver->blitSpriteVertices(video_data, TEXTURE_LAYER_SCROLLH,
 		NULL, 0, scrollh_num, vertices_scrollh);
 }
@@ -637,6 +718,7 @@ void blit_draw_stars(uint16_t stars_x, uint16_t stars_y, uint8_t *col,
 		}
 	}
 
+	cps_scene_plane(VIDEO_PLANE_FAR);
 	if (stars_num)
 		video_driver->blitPointVertices(video_data, stars_num, vertices_stars);
 }

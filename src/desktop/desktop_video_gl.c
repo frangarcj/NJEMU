@@ -99,7 +99,10 @@
 	X(UseProgram) \
 	X(GetUniformLocation) \
 	X(Uniform1i) \
+	X(Uniform1f) \
 	X(Uniform4f) \
+	X(DrawBuffers) \
+	X(GenerateMipmap) \
 	X(DrawElementsBaseVertex) \
 	X(DrawArrays) \
 	X(GenFramebuffers) \
@@ -192,6 +195,192 @@ static const char gld_direct_src[] =
 	"	fragColor = texture(uTex, vUV);\n"
 	"}\n";
 
+/* HD-2D scene replay (NJEMU_HD2D=1): the floor recedes in perspective. With
+ * t = 0 at the horizon row and 1 at the bottom, each row is widened by
+ * 1 + (k - 1) t around the centre, so the floor's lines converge on the
+ * horizon. Rows keep their height: the game draws the floor's foreshortening
+ * itself and its characters and shadows stay on their rows. Row-scrolled
+ * floors arrive as one-row bands, so the per-row stretch is exact. Every
+ * draw also writes its circle of confusion, blended like the colour. */
+static const char gld_scene_vertex_src[] =
+	"#version 330 core\n"
+	"layout(location = 0) in vec2 aUV;\n"
+	"layout(location = 1) in vec2 aPos;\n"
+	"layout(location = 2) in vec2 aZP;\n"
+	"uniform vec4 uRowX;\n"
+	"uniform vec4 uRowY;\n"
+	"uniform vec4 uTexScale;\n"
+	"uniform vec4 uFloor;\n"		/* horizon row, bottom row, stretch k, centre X */
+	"out vec2 vUV;\n"
+	"out float vPal;\n"
+	"out float vT;\n"
+	"void main() {\n"
+	"	vec3 p = vec3(aPos, 1.0);\n"
+	"	vT = -1.0;\n"
+	"	if (uFloor.y > uFloor.x) {\n"
+	"		float t = clamp((aPos.y - uFloor.x) / (uFloor.y - uFloor.x), 0.0, 1.0);\n"
+	"		p.x = uFloor.w + (aPos.x - uFloor.w) * mix(1.0, uFloor.z, t);\n"
+	"		vT = t;\n"
+	"	}\n"
+	"	gl_Position = vec4(dot(uRowX.xyz, p), dot(uRowY.xyz, p),\n"
+	"	                   aZP.x * (2.0 / 65535.0) - 1.0, 1.0);\n"
+	"	vUV = aUV * uTexScale.xy;\n"
+	"	vPal = (aZP.y + 0.5) * uTexScale.z;\n"
+	"}\n";
+
+/* uCoc: the plane's blur, or on the floor the blur at the horizon, at the
+ * bottom and the sharp row t between them. uDepth: the plane's distance
+ * (0 near, 1 far), or the floor's at the horizon and at the bottom. */
+#define GLD_SCENE_COC \
+	"uniform vec4 uCoc;\n" \
+	"uniform vec4 uDepth;\n" \
+	"in float vT;\n" \
+	"layout(location = 1) out vec4 fragCoc;\n" \
+	"vec2 cocDepth() {\n" \
+	"	if (vT < 0.0) return vec2(uCoc.x, uDepth.x);\n" \
+	"	float c = vT < uCoc.w ? mix(uCoc.y, 0.0, vT / uCoc.w)\n" \
+	"	                      : mix(0.0, uCoc.z, (vT - uCoc.w) / (1.0 - uCoc.w));\n" \
+	"	return vec2(c, mix(uDepth.y, uDepth.z, vT));\n" \
+	"}\n"
+
+static const char gld_scene_indexed_src[] =
+	"#version 330 core\n"
+	"in vec2 vUV;\n"
+	"in float vPal;\n"
+	"uniform sampler2D uTex;\n"
+	"uniform sampler2D uClut;\n"
+	"layout(location = 0) out vec4 fragColor;\n"
+	GLD_SCENE_COC
+	"void main() {\n"
+	"	float i = texture(uTex, vUV).r;\n"
+	"	fragColor = texture(uClut, vec2(i * (255.0 / 256.0) + (0.5 / 256.0), vPal));\n"
+	"	fragCoc = vec4(cocDepth(), 0.0, fragColor.a);\n"
+	"}\n";
+
+static const char gld_scene_indexed_depth_src[] =
+	"#version 330 core\n"
+	"in vec2 vUV;\n"
+	"in float vPal;\n"
+	"uniform sampler2D uTex;\n"
+	"uniform sampler2D uClut;\n"
+	"layout(location = 0) out vec4 fragColor;\n"
+	GLD_SCENE_COC
+	"void main() {\n"
+	"	float i = texture(uTex, vUV).r;\n"
+	"	vec4 c = texture(uClut, vec2(i * (255.0 / 256.0) + (0.5 / 256.0), vPal));\n"
+	"	if (c.a > 0.5)\n"
+	"		discard;\n"
+	"	fragColor = c;\n"
+	"	fragCoc = vec4(cocDepth(), 0.0, 0.0);\n"
+	"}\n";
+
+static const char gld_scene_direct_src[] =
+	"#version 330 core\n"
+	"in vec2 vUV;\n"
+	"uniform sampler2D uTex;\n"
+	"layout(location = 0) out vec4 fragColor;\n"
+	GLD_SCENE_COC
+	"void main() {\n"
+	"	fragColor = texture(uTex, vUV);\n"
+	"	fragCoc = vec4(cocDepth(), 0.0, fragColor.a);\n"
+	"}\n";
+
+/* Depth of field: a 40-sample golden-angle disc of the pixel's own radius,
+ * read from the scene's mipmaps so wide blurs stay smooth. A sample counts
+ * only where its own blur reaches this pixel, so sharp characters do not
+ * bleed into the stage behind them; bright samples weigh more (bokeh).
+ * Then aerial perspective: distance desaturates and fades toward the
+ * scene's average light, cooled. The depth goes out in alpha. */
+static const char gld_dof_src[] =
+	"#version 330 core\n"
+	"in vec2 vUV;\n"
+	"uniform sampler2D uTex;\n"
+	"uniform sampler2D uClut;\n"	/* circle of confusion, depth */
+	"uniform vec4 uParams;\n"		/* texel size, radius of coc 1 in texels, haze */
+	"uniform vec4 uFog;\n"			/* haze tint, share of the tint */
+	"out vec4 fragColor;\n"
+	"void main() {\n"
+	"	vec2 cd = texture(uClut, vUV).rg;\n"
+	"	float r = cd.r * uParams.z;\n"
+	"	float lod = clamp(log2(max(r * 0.3, 1.0)), 0.0, 4.0);\n"
+	"	vec3 sum = textureLod(uTex, vUV, lod * 0.5).rgb;\n"
+	"	float total = 1.0;\n"
+	"	for (int i = 1; i < 40; i++) {\n"
+	"		float d = sqrt(float(i) / 39.0) * r;\n"
+	"		float a = float(i) * 2.39996;\n"
+	"		vec2 uv = vUV + vec2(cos(a), sin(a)) * d * uParams.xy;\n"
+	"		vec3 s = textureLod(uTex, uv, lod).rgb;\n"
+	"		float w = clamp(texture(uClut, uv).r * uParams.z - d + 1.0, 0.0, 1.0);\n"
+	"		w *= 1.0 + 4.0 * max(dot(s, vec3(0.3333)) - 0.8, 0.0);\n"
+	"		sum += s * w;\n"
+	"		total += w;\n"
+	"	}\n"
+	"	vec3 c = sum / total;\n"
+	"	vec3 avg = textureLod(uTex, vec2(0.5), 16.0).rgb;\n"
+	"	vec3 haze = mix(avg * 1.15 + 0.06, uFog.rgb, uFog.a);\n"
+	"	c = mix(c, vec3(dot(c, vec3(0.299, 0.587, 0.114))), cd.g * 0.3);\n"
+	"	c = mix(c, haze, cd.g * uParams.w);\n"
+	"	fragColor = vec4(c, cd.g);\n"
+	"}\n";
+
+/* The look: wide bloom from the mipmapped result, light shafts marched
+ * toward the light through bright distant pixels, split toning (cool
+ * shadows, warm highlights) with lifted blacks, drifting dust motes and a
+ * vignette. */
+static const char gld_grade_src[] =
+	"#version 330 core\n"
+	"in vec2 vUV;\n"
+	"uniform sampler2D uTex;\n"
+	"uniform vec4 uParams;\n"		/* bloom threshold, bloom gain, vignette, time */
+	"uniform vec4 uLight;\n"		/* light position, shaft gain, dust gain */
+	"out vec4 fragColor;\n"
+	"float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }\n"
+	"vec3 dust(vec2 uv, float t, float scale, float size) {\n"
+	"	vec2 p = uv * vec2(scale * 1.6, scale) + vec2(0.02, 0.06) * t * scale;\n"
+	"	vec2 cell = floor(p);\n"
+	"	float h = hash(cell);\n"
+	"	if (h > 0.2)\n"
+	"		return vec3(0.0);\n"
+	"	vec2 at = vec2(hash(cell + 3.1), hash(cell + 7.7)) * 0.6 + 0.2\n"
+	"	        + 0.15 * vec2(sin(t * (0.5 + h * 3.0) + h * 40.0), cos(t * (0.4 + h * 2.0)));\n"
+	"	float glow = smoothstep(1.0, 0.0, length(fract(p) - at) / size);\n"
+	"	return vec3(1.0, 0.9, 0.72) * glow * (0.6 + 0.4 * sin(t * (1.0 + h * 5.0) + h * 20.0));\n"
+	"}\n"
+	"void main() {\n"
+	"	vec3 c = texture(uTex, vUV).rgb;\n"
+	"	vec3 b = max(textureLod(uTex, vUV, 2.0).rgb - uParams.x, 0.0) * 0.5\n"
+	"	       + max(textureLod(uTex, vUV, 3.5).rgb - uParams.x, 0.0) * 0.8\n"
+	"	       + max(textureLod(uTex, vUV, 5.0).rgb - uParams.x, 0.0)\n"
+	"	       + max(textureLod(uTex, vUV, 6.5).rgb - uParams.x * 0.8, 0.0);\n"
+	"	c += b * uParams.y;\n"
+	"	vec2 step = (uLight.xy - vUV) / 32.0;\n"
+	"	vec2 uv = vUV;\n"
+	"	float decay = 1.0;\n"
+	"	vec3 rays = vec3(0.0);\n"
+	"	for (int i = 0; i < 32; i++) {\n"
+	"		uv += step;\n"
+	"		vec4 s = textureLod(uTex, clamp(uv, 0.0, 1.0), 3.0);\n"
+	"		rays += max(s.rgb - 0.42, 0.0) * s.a * decay;\n"
+	"		decay *= 0.95;\n"
+	"	}\n"
+	"	c += rays * (uLight.z / 12.0) * vec3(1.0, 0.94, 0.8);\n"
+	"	float l = dot(c, vec3(0.299, 0.587, 0.114));\n"
+	"	c *= mix(vec3(0.86, 0.98, 1.1), vec3(1.08, 1.0, 0.86), smoothstep(0.15, 0.85, l));\n"
+	"	c = c * 0.92 + vec3(0.025, 0.035, 0.05);\n"
+	"	c = mix(c, c * c * (3.0 - 2.0 * c), 0.25);\n"
+	"	c += (dust(vUV, uParams.w, 9.0, 0.05) * 0.35 +\n"
+	"	      dust(vUV + 0.37, uParams.w * 0.7, 4.0, 0.14) * 0.22) * uLight.w;\n"
+	"	vec2 q = (vUV - 0.5) * vec2(1.0, 0.9);\n"
+	"	c *= mix(1.0, smoothstep(1.0, 0.2, length(q) * 1.2), uParams.z);\n"
+	"	fragColor = vec4(clamp(c, 0.0, 1.0), 1.0);\n"
+	"}\n";
+
+enum {
+	GLD_POST_DOF,
+	GLD_POST_GRADE,
+	GLD_POST_COUNT
+};
+
 
 /******************************************************************************
 	State
@@ -218,6 +407,12 @@ typedef struct gld_program {
 	GLint u_row_x;
 	GLint u_row_y;
 	GLint u_tex_scale;
+	GLint u_floor;				/* scene programs */
+	GLint u_coc;
+	GLint u_depth;
+	GLint u_params;				/* post programs */
+	GLint u_fog;
+	GLint u_light;
 } gld_program_t;
 
 typedef struct desktop_gl_video {
@@ -261,6 +456,27 @@ typedef struct desktop_gl_video {
 	int sharp_w;
 	int sharp_h;
 
+	/* HD-2D prototype (NJEMU_HD2D=1): scene target (colour + circle of
+	 * confusion) and depth-of-field target, at a whole scale of the frame */
+	bool hd2d;
+	gld_program_t scene_progs[HW_PROG_COUNT];
+	gld_program_t post_progs[GLD_POST_COUNT];
+	GLuint scene_fbo;
+	GLuint scene_color;
+	GLuint scene_coc;
+	GLuint scene_depth;
+	GLuint dof_fbo;
+	GLuint dof_color;
+	int scene_w;
+	int scene_h;
+	int16_t floor_top;
+	float plane_coc[VIDEO_PLANE_COUNT];
+	float plane_depth[VIDEO_PLANE_COUNT];
+	float floor_coc[3];			/* horizon, bottom, sharp row t */
+	float floor_depth[2];		/* horizon, bottom */
+	float floor_stretch;
+	float blur_radius;			/* work pixels at coc 1 */
+
 	/* Statistics (NJEMU_VIDEO_STATS=1) */
 	bool stats;
 	uint32_t stat_frames;
@@ -300,22 +516,23 @@ static GLuint gld_compile(GLenum type, const char *source)
 	return shader;
 }
 
-static bool gld_create_programs(desktop_gl_video_t *g)
+/* Links `count` programs sharing vertex shader `vs_src`. */
+static bool gld_link_programs(gld_program_t *progs, int count, const char *vs_src,
+							  const char *const *fragments)
 {
-	static const char *const fragments[HW_PROG_COUNT] = {
-		gld_indexed_src, gld_indexed_depth_src, gld_direct_src,
-	};
-	GLuint vs = gld_compile(GL_VERTEX_SHADER, gld_vertex_src);
+	GLuint vs = gld_compile(GL_VERTEX_SHADER, vs_src);
 	if (vs == 0)
 		return false;
 
-	for (int i = 0; i < HW_PROG_COUNT; i++) {
+	for (int i = 0; i < count; i++) {
 		GLuint fs = gld_compile(GL_FRAGMENT_SHADER, fragments[i]);
 		GLint ok = GL_FALSE;
-		if (fs == 0)
+		if (fs == 0) {
+			gl.DeleteShader(vs);
 			return false;
+		}
 
-		gld_program_t *p = &g->progs[i];
+		gld_program_t *p = &progs[i];
 		p->id = gl.CreateProgram();
 		gl.AttachShader(p->id, vs);
 		gl.AttachShader(p->id, fs);
@@ -326,12 +543,19 @@ static bool gld_create_programs(desktop_gl_video_t *g)
 			char log[1024];
 			gl.GetProgramInfoLog(p->id, sizeof(log), NULL, log);
 			printf("desktop_gl: program link failed: %s\n", log);
+			gl.DeleteShader(vs);
 			return false;
 		}
 
 		p->u_row_x = gl.GetUniformLocation(p->id, "uRowX");
 		p->u_row_y = gl.GetUniformLocation(p->id, "uRowY");
 		p->u_tex_scale = gl.GetUniformLocation(p->id, "uTexScale");
+		p->u_floor = gl.GetUniformLocation(p->id, "uFloor");
+		p->u_coc = gl.GetUniformLocation(p->id, "uCoc");
+		p->u_depth = gl.GetUniformLocation(p->id, "uDepth");
+		p->u_fog = gl.GetUniformLocation(p->id, "uFog");
+		p->u_light = gl.GetUniformLocation(p->id, "uLight");
+		p->u_params = gl.GetUniformLocation(p->id, "uParams");
 		gl.UseProgram(p->id);
 		gl.Uniform1i(gl.GetUniformLocation(p->id, "uTex"), 0);
 		GLint u_clut = gl.GetUniformLocation(p->id, "uClut");
@@ -340,6 +564,14 @@ static bool gld_create_programs(desktop_gl_video_t *g)
 	}
 	gl.DeleteShader(vs);
 	return true;
+}
+
+static bool gld_create_programs(desktop_gl_video_t *g)
+{
+	static const char *const fragments[HW_PROG_COUNT] = {
+		gld_indexed_src, gld_indexed_depth_src, gld_direct_src,
+	};
+	return gld_link_programs(g->progs, HW_PROG_COUNT, gld_vertex_src, fragments);
 }
 
 static void gld_texture_params(void)
@@ -538,15 +770,22 @@ static void gld_set_depth(uint8_t mode)
 	gl.DepthMask(GL_TRUE);
 }
 
-static void gld_replay(desktop_gl_video_t *g, const float row_x[3], const float row_y[3])
+static void gld_scene_uniforms(desktop_gl_video_t *g, const gld_program_t *p,
+							   const hw_cmd_t *cmd, float centre_x, float bottom);
+
+/* Replays the recording; `scene` selects the HD-2D programs and planes. */
+static void gld_replay_with(desktop_gl_video_t *g, const float row_x[3], const float row_y[3],
+							bool scene, float centre_x, float bottom)
 {
+	const gld_program_t *progs = scene ? g->scene_progs : g->progs;
+
 	gld_bind_vertex_buffer(g, g->vbo);
 	gl.Enable(GL_BLEND);
 	gl.BlendFunc(GL_ONE_MINUS_SRC_ALPHA, GL_SRC_ALPHA);
 
 	for (uint32_t i = 0; i < g->rec.cmd_count; i++) {
 		const hw_cmd_t *cmd = &g->rec.cmds[i];
-		const gld_program_t *p = &g->progs[cmd->prog];
+		const gld_program_t *p = &progs[cmd->prog];
 		GLuint clut = cmd->clut ? g->clut_tex[(uintptr_t)cmd->clut - 1] : 0;
 
 		/* The depth-tested program discards instead of blending. */
@@ -566,6 +805,8 @@ static void gld_replay(desktop_gl_video_t *g, const float row_x[3], const float 
 		gl.Uniform4f(p->u_row_y, row_y[0], row_y[1], row_y[2], 0.0f);
 		gl.Uniform4f(p->u_tex_scale, 1.0f / cmd->tex_w, 1.0f / cmd->tex_h,
 			1.0f / HW_CLUT_ROWS, 0.0f);
+		if (scene)
+			gld_scene_uniforms(g, p, cmd, centre_x, bottom);
 
 		uint32_t first = (uint32_t)((uintptr_t)cmd->vertices - 1) + cmd->first_quad;
 		uint32_t quads = cmd->quads;
@@ -582,6 +823,11 @@ static void gld_replay(desktop_gl_video_t *g, const float row_x[3], const float 
 
 	gl.Disable(GL_DEPTH_TEST);
 	gl.Disable(GL_BLEND);
+}
+
+static void gld_replay(desktop_gl_video_t *g, const float row_x[3], const float row_y[3])
+{
+	gld_replay_with(g, row_x, row_y, false, 0.0f, 0.0f);
 }
 
 /* Re-renders the recording at 1x into the dump FBO and writes the src rect. */
@@ -680,11 +926,11 @@ static bool gld_render_sharp(desktop_gl_video_t *g, const RECT *src)
 	return true;
 }
 
-/* Filters the sharp target bilinearly onto `dst` of the bound canvas viewport. */
-static void gld_draw_sharp(desktop_gl_video_t *g, const RECT *dst, int orient)
+/* Draws the w x h render target `tex` onto `dst` of the bound canvas viewport. */
+static void gld_draw_target(desktop_gl_video_t *g, const gld_program_t *p, GLuint tex,
+							int w, int h, const RECT *dst, int orient)
 {
-	const gld_program_t *p = &g->progs[HW_PROG_DIRECT];
-	const RECT target = { 0, 0, (int16_t)g->sharp_w, (int16_t)g->sharp_h };
+	const RECT target = { 0, 0, (int16_t)w, (int16_t)h };
 	hw_vertex_t q[4];
 	hw_xform_t m;
 	RECT d;
@@ -694,21 +940,269 @@ static void gld_draw_sharp(desktop_gl_video_t *g, const RECT *dst, int orient)
 		return;
 	hw_clip_rows(&m, GLD_CANVAS_WIDTH, GLD_CANVAS_HEIGHT, row_x, row_y);
 	/* GL render targets are bottom-up: the frame's top row is t = 1. */
-	hw_write_quad(q, 0, 0, (int16_t)g->sharp_w, (int16_t)g->sharp_h,
-		0.0f, (float)g->sharp_h, (float)g->sharp_w, 0.0f, 0, 0);
+	hw_write_quad(q, 0, 0, (int16_t)w, (int16_t)h, 0.0f, (float)h, (float)w, 0.0f, 0, 0);
 
 	gl.Disable(GL_DEPTH_TEST);
 	gl.Disable(GL_BLEND);
 	gl.UseProgram(p->id);
 	gl.Uniform4f(p->u_row_x, row_x[0], row_x[1], row_x[2], 0.0f);
 	gl.Uniform4f(p->u_row_y, row_y[0], row_y[1], row_y[2], 0.0f);
-	gl.Uniform4f(p->u_tex_scale, 1.0f / g->sharp_w, 1.0f / g->sharp_h, 0.0f, 0.0f);
+	gl.Uniform4f(p->u_tex_scale, 1.0f / w, 1.0f / h, 0.0f, 0.0f);
 	gl.ActiveTexture(GL_TEXTURE0);
-	gl.BindTexture(GL_TEXTURE_2D, g->sharp_color);
+	gl.BindTexture(GL_TEXTURE_2D, tex);
 	gld_bind_vertex_buffer(g, g->ui_vbo);
 	gl.BufferData(GL_ARRAY_BUFFER, sizeof(q), q, GL_STREAM_DRAW);
 	gl.DrawArrays(GL_TRIANGLE_FAN, 0, 4);
 	g->stat_draws++;
+}
+
+/* Filters the sharp target bilinearly onto `dst` of the bound canvas viewport. */
+static void gld_draw_sharp(desktop_gl_video_t *g, const RECT *dst, int orient)
+{
+	gld_draw_target(g, &g->progs[HW_PROG_DIRECT], g->sharp_color, g->sharp_w, g->sharp_h,
+		dst, orient);
+}
+
+/******************************************************************************
+	HD-2D prototype (NJEMU_HD2D=1)
+
+	Targets tag their draws with VIDEO_PLANE_* (setScenePlane). The frame is
+	replayed at a whole scale of at least 2 into a colour target and a
+	circle-of-confusion target, the floor as a ground plane in perspective;
+	then the depth of field and the grade are applied on the way to the
+	window. NJEMU_HD2D_FLOOR (stretch of the nearest floor row, 1 = flat) and
+	NJEMU_HD2D_BLUR (blur radius at coc 1, in work pixels) tune it.
+******************************************************************************/
+
+static float gld_env_float(const char *name, float fallback)
+{
+	const char *value = getenv(name);
+	return value != NULL && value[0] != '\0' ? (float)atof(value) : fallback;
+}
+
+static void gld_hd2d_free_targets(desktop_gl_video_t *g)
+{
+	if (g->scene_fbo) gl.DeleteFramebuffers(1, &g->scene_fbo);
+	if (g->scene_depth) gl.DeleteRenderbuffers(1, &g->scene_depth);
+	if (g->scene_color) gl.DeleteTextures(1, &g->scene_color);
+	if (g->scene_coc) gl.DeleteTextures(1, &g->scene_coc);
+	if (g->dof_fbo) gl.DeleteFramebuffers(1, &g->dof_fbo);
+	if (g->dof_color) gl.DeleteTextures(1, &g->dof_color);
+	g->scene_fbo = g->scene_depth = g->scene_color = g->scene_coc = 0;
+	g->dof_fbo = g->dof_color = 0;
+	g->scene_w = g->scene_h = 0;
+}
+
+static void gld_hd2d_free(desktop_gl_video_t *g)
+{
+	gld_hd2d_free_targets(g);
+	for (int i = 0; i < HW_PROG_COUNT; i++)
+		if (g->scene_progs[i].id)
+			gl.DeleteProgram(g->scene_progs[i].id);
+	for (int i = 0; i < GLD_POST_COUNT; i++)
+		if (g->post_progs[i].id)
+			gl.DeleteProgram(g->post_progs[i].id);
+}
+
+static void gld_hd2d_init(desktop_gl_video_t *g)
+{
+	static const char *const scene[HW_PROG_COUNT] = {
+		gld_scene_indexed_src, gld_scene_indexed_depth_src, gld_scene_direct_src,
+	};
+	static const char *const post[GLD_POST_COUNT] = { gld_dof_src, gld_grade_src };
+	const char *enable = getenv("NJEMU_HD2D");
+
+	if (enable == NULL || enable[0] != '1')
+		return;
+	if (!gld_link_programs(g->scene_progs, HW_PROG_COUNT, gld_scene_vertex_src, scene) ||
+		!gld_link_programs(g->post_progs, GLD_POST_COUNT, gld_vertex_src, post)) {
+		printf("desktop_gl: HD-2D disabled\n");
+		gld_hd2d_free(g);
+		return;
+	}
+
+	/* Tilt-shift: the action sharp, the distance and the nearest floor soft;
+	 * the distance also hazy. */
+	g->plane_coc[VIDEO_PLANE_NONE] = 1.0f;
+	g->plane_coc[VIDEO_PLANE_FAR] = 1.0f;
+	g->plane_coc[VIDEO_PLANE_MID] = 0.7f;
+	g->plane_coc[VIDEO_PLANE_BACK] = 0.4f;
+	g->plane_coc[VIDEO_PLANE_FLOOR] = 0.0f;
+	g->plane_coc[VIDEO_PLANE_FOCUS] = 0.0f;
+	g->plane_depth[VIDEO_PLANE_NONE] = 1.0f;
+	g->plane_depth[VIDEO_PLANE_FAR] = 1.0f;
+	g->plane_depth[VIDEO_PLANE_MID] = 0.7f;
+	g->plane_depth[VIDEO_PLANE_BACK] = 0.4f;
+	g->plane_depth[VIDEO_PLANE_FLOOR] = 0.0f;
+	g->plane_depth[VIDEO_PLANE_FOCUS] = 0.0f;
+	g->floor_coc[0] = 0.6f;
+	g->floor_coc[1] = 0.9f;
+	g->floor_coc[2] = 0.4f;
+	g->floor_depth[0] = 0.4f;
+	g->floor_depth[1] = 0.0f;
+	g->floor_stretch = gld_env_float("NJEMU_HD2D_FLOOR", 1.5f);
+	if (g->floor_stretch < 1.0f)
+		g->floor_stretch = 1.0f;
+	g->blur_radius = gld_env_float("NJEMU_HD2D_BLUR", 5.0f);
+	g->hd2d = true;
+	printf("desktop_gl: HD-2D on (floor %.2f, blur %.2f)\n", g->floor_stretch, g->blur_radius);
+}
+
+static GLuint gld_target_texture(GLint internal, GLenum format, int w, int h, bool mipmaps)
+{
+	GLuint tex;
+	gl.GenTextures(1, &tex);
+	gl.BindTexture(GL_TEXTURE_2D, tex);
+	gld_texture_params();
+	gl.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
+		mipmaps ? GL_LINEAR_MIPMAP_LINEAR : GL_LINEAR);
+	gl.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	gl.TexImage2D(GL_TEXTURE_2D, 0, internal, w, h, 0, format, GL_UNSIGNED_BYTE, NULL);
+	if (mipmaps)
+		gl.GenerateMipmap(GL_TEXTURE_2D);
+	return tex;
+}
+
+static bool gld_hd2d_targets(desktop_gl_video_t *g, int w, int h)
+{
+	bool complete;
+
+	if (g->scene_fbo && g->scene_w == w && g->scene_h == h)
+		return true;
+	gld_hd2d_free_targets(g);
+
+	g->scene_color = gld_target_texture(GL_RGBA8, GL_RGBA, w, h, true);
+	g->scene_coc = gld_target_texture(GL_RG8, GL_RG, w, h, false);
+	gl.GenRenderbuffers(1, &g->scene_depth);
+	gl.BindRenderbuffer(GL_RENDERBUFFER, g->scene_depth);
+	gl.RenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, w, h);
+	gl.GenFramebuffers(1, &g->scene_fbo);
+	gl.BindFramebuffer(GL_FRAMEBUFFER, g->scene_fbo);
+	gl.FramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, g->scene_color, 0);
+	gl.FramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, g->scene_coc, 0);
+	gl.FramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER,
+		g->scene_depth);
+	complete = gl.CheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+
+	g->dof_color = gld_target_texture(GL_RGBA8, GL_RGBA, w, h, true);
+	gl.GenFramebuffers(1, &g->dof_fbo);
+	gl.BindFramebuffer(GL_FRAMEBUFFER, g->dof_fbo);
+	gl.FramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, g->dof_color, 0);
+	complete = complete && gl.CheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+	gl.BindFramebuffer(GL_FRAMEBUFFER, 0);
+	if (!complete) {
+		printf("desktop_gl: HD-2D framebuffers incomplete\n");
+		gld_hd2d_free_targets(g);
+		return false;
+	}
+	g->scene_w = w;
+	g->scene_h = h;
+	return true;
+}
+
+static void gld_scene_uniforms(desktop_gl_video_t *g, const gld_program_t *p,
+							   const hw_cmd_t *cmd, float centre_x, float bottom)
+{
+	const uint8_t plane = cmd->plane < VIDEO_PLANE_COUNT ? cmd->plane : VIDEO_PLANE_NONE;
+
+	/* Only scenes with a floor are stages: menus and titles stay sharp. */
+	if (g->floor_top < 0 || g->floor_top >= bottom) {
+		gl.Uniform4f(p->u_floor, 0.0f, 0.0f, 1.0f, 0.0f);
+		gl.Uniform4f(p->u_coc, 0.0f, 0.0f, 0.0f, 0.5f);
+		gl.Uniform4f(p->u_depth, 0.0f, 0.0f, 0.0f, 0.0f);
+	} else if (plane == VIDEO_PLANE_FLOOR) {
+		gl.Uniform4f(p->u_floor, g->floor_top, bottom, g->floor_stretch, centre_x);
+		gl.Uniform4f(p->u_coc, 0.0f, g->floor_coc[0], g->floor_coc[1], g->floor_coc[2]);
+		gl.Uniform4f(p->u_depth, 0.0f, g->floor_depth[0], g->floor_depth[1], 0.0f);
+	} else {
+		gl.Uniform4f(p->u_floor, 0.0f, 0.0f, 1.0f, 0.0f);
+		gl.Uniform4f(p->u_coc, g->plane_coc[plane], 0.0f, 0.0f, 0.5f);
+		gl.Uniform4f(p->u_depth, g->plane_depth[plane], 0.0f, 0.0f, 0.0f);
+	}
+}
+
+/* Renders the scene and its depth of field for a destination of out_w x
+ * out_h physical pixels; the result is g->dof_color. */
+static bool gld_hd2d_render(desktop_gl_video_t *g, const RECT *src, int out_w, int out_h)
+{
+	static const GLenum buffers[2] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1 };
+	const int sw = src->right - src->left, sh = src->bottom - src->top;
+	int scale, w, h;
+	hw_xform_t m;
+	RECT d, target;
+	float row_x[3], row_y[3];
+	hw_vertex_t q[4];
+
+	if (sw <= 0 || sh <= 0)
+		return false;
+	scale = (out_w + sw - 1) / sw;
+	if ((out_h + sh - 1) / sh > scale)
+		scale = (out_h + sh - 1) / sh;
+	if (scale < 2)
+		scale = 2;
+	while (scale > 1 && (sw * scale > GLD_MAX_TEXTURE_DIM || sh * scale > GLD_MAX_TEXTURE_DIM))
+		scale--;
+	w = sw * scale;
+	h = sh * scale;
+	if (!gld_hd2d_targets(g, w, h))
+		return false;
+
+	target = (RECT){ 0, 0, (int16_t)w, (int16_t)h };
+	if (!hw_present_geometry(src, &target, HW_ORIENT_NORMAL, w, h, &d, &m))
+		return false;
+	hw_clip_rows(&m, w, h, row_x, row_y);
+
+	gl.BindFramebuffer(GL_FRAMEBUFFER, g->scene_fbo);
+	gl.DrawBuffers(2, buffers);
+	gl.Viewport(0, 0, w, h);
+	gl.Disable(GL_SCISSOR_TEST);
+	gl.ClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+	gl.ClearDepth(1.0);
+	gl.DepthMask(GL_TRUE);
+	gl.Clear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+	gld_replay_with(g, row_x, row_y, true, (src->left + src->right) * 0.5f, src->bottom);
+
+	/* Depth of field into the mipmapped target the grade samples. */
+	const gld_program_t *dof = &g->post_progs[GLD_POST_DOF];
+	const float id_x[3] = { 2.0f / w, 0.0f, -1.0f };
+	const float id_y[3] = { 0.0f, -2.0f / h, 1.0f };
+	hw_write_quad(q, 0, 0, (int16_t)w, (int16_t)h, 0.0f, (float)h, (float)w, 0.0f, 0, 0);
+	gl.BindFramebuffer(GL_FRAMEBUFFER, g->dof_fbo);
+	gl.Viewport(0, 0, w, h);
+	gl.UseProgram(dof->id);
+	gl.Uniform4f(dof->u_row_x, id_x[0], id_x[1], id_x[2], 0.0f);
+	gl.Uniform4f(dof->u_row_y, id_y[0], id_y[1], id_y[2], 0.0f);
+	gl.Uniform4f(dof->u_tex_scale, 1.0f / w, 1.0f / h, 0.0f, 0.0f);
+	gl.Uniform4f(dof->u_params, 1.0f / w, 1.0f / h, g->blur_radius * scale, 0.32f);
+	gl.Uniform4f(dof->u_fog, 0.62f, 0.74f, 0.86f, 0.5f);
+	gl.ActiveTexture(GL_TEXTURE1);
+	gl.BindTexture(GL_TEXTURE_2D, g->scene_coc);
+	gl.ActiveTexture(GL_TEXTURE0);
+	gl.BindTexture(GL_TEXTURE_2D, g->scene_color);
+	gl.GenerateMipmap(GL_TEXTURE_2D);
+	gld_bind_vertex_buffer(g, g->ui_vbo);
+	gl.BufferData(GL_ARRAY_BUFFER, sizeof(q), q, GL_STREAM_DRAW);
+	gl.DrawArrays(GL_TRIANGLE_FAN, 0, 4);
+	gl.BindTexture(GL_TEXTURE_2D, g->dof_color);
+	gl.GenerateMipmap(GL_TEXTURE_2D);
+
+	const gld_program_t *grade = &g->post_progs[GLD_POST_GRADE];
+	gl.UseProgram(grade->id);
+	const bool stage = g->floor_top >= 0 && g->floor_top < src->bottom;
+	gl.Uniform4f(grade->u_params, 0.62f, 0.55f, 0.7f, g->presented_frames / 60.0f);
+	gl.Uniform4f(grade->u_light, 0.5f, 1.15f, stage ? 0.9f : 0.0f, stage ? 1.0f : 0.0f);
+	return true;
+}
+
+static void desktop_gl_setScenePlane(void *data, uint8_t plane, int16_t horizon)
+{
+	desktop_gl_video_t *g = data;
+
+	if (!g->hd2d)
+		return;
+	hw_rec_set_plane(&g->rec, plane);
+	if (plane == VIDEO_PLANE_FLOOR)
+		g->floor_top = horizon;
 }
 
 static void gld_present(desktop_gl_video_t *g, const RECT *src, const RECT *dst, int orient)
@@ -718,7 +1212,7 @@ static void gld_present(desktop_gl_video_t *g, const RECT *src, const RECT *dst,
 	float row_x[3], row_y[3];
 	int win_w, win_h;
 	int target_w, target_h;
-	bool sharp;
+	bool sharp, hd2d;
 
 	hw_rec_flush(&g->rec);
 	if (!hw_present_geometry(src, dst, orient, GLD_CANVAS_WIDTH, GLD_CANVAS_HEIGHT, &d, &m))
@@ -737,7 +1231,9 @@ static void gld_present(desktop_gl_video_t *g, const RECT *src, const RECT *dst,
 	const int vp_w = (int)(GLD_CANVAS_WIDTH * scale), vp_h = (int)(GLD_CANVAS_HEIGHT * scale);
 	const int vp_x = (win_w - vp_w) / 2, vp_y = (win_h - vp_h) / 2;
 
-	sharp = hw_sharp_target(src, (int)((d.right - d.left) * scale),
+	hd2d = g->hd2d && orient == HW_ORIENT_NORMAL &&
+		gld_hd2d_render(g, src, (int)((d.right - d.left) * scale), (int)((d.bottom - d.top) * scale));
+	sharp = !hd2d && hw_sharp_target(src, (int)((d.right - d.left) * scale),
 			(int)((d.bottom - d.top) * scale), orient, false, GLD_MAX_TEXTURE_DIM,
 			&target_w, &target_h) &&
 		gld_sharp_target(g, target_w, target_h) &&
@@ -752,7 +1248,10 @@ static void gld_present(desktop_gl_video_t *g, const RECT *src, const RECT *dst,
 	gl.Clear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 	gl.Viewport(vp_x, vp_y, vp_w, vp_h);
-	if (sharp) {
+	if (hd2d) {
+		gld_draw_target(g, &g->post_progs[GLD_POST_GRADE], g->dof_color, g->scene_w, g->scene_h,
+			dst, orient);
+	} else if (sharp) {
 		gld_draw_sharp(g, dst, orient);
 	} else {
 		/* Only the destination rectangle shows the work frame. */
@@ -896,6 +1395,7 @@ static void *desktop_gl_init(layer_texture_info_t *layer_textures, uint8_t layer
 
 	const char *stats = getenv("NJEMU_VIDEO_STATS");
 	g->stats = stats != NULL && stats[0] == '1';
+	gld_hd2d_init(g);
 	return g;
 
 fail:
@@ -930,6 +1430,7 @@ static void desktop_gl_free(void *data)
 		gl.DeleteRenderbuffers(1, &g->dump_depth);
 		gl.DeleteFramebuffers(1, &g->dump_fbo);
 		gld_free_sharp(g);
+		gld_hd2d_free(g);
 		gl.DeleteBuffers(1, &g->vbo);
 		gl.DeleteBuffers(1, &g->ibo);
 		gl.DeleteVertexArrays(1, &g->vao);
@@ -1131,6 +1632,7 @@ static void desktop_gl_startWorkFrame(void *data, uint32_t color)
 	gld_reset_frame(g);
 	g->pending_flip = false;
 	g->screen_fill_valid = false;
+	g->floor_top = -1;
 	hw_rec_begin_work(&g->rec, hw_rgba_to_555(color));
 }
 
@@ -1586,4 +2088,5 @@ video_driver_t video_desktop_gl = {
 	.setUIScissor = desktop_gl_setUIScissor,
 	.flushAndWait = NULL,
 	.getNativeContext = NULL,
+	.setScenePlane = desktop_gl_setScenePlane,
 };

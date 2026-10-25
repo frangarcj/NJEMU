@@ -18,6 +18,7 @@ int blit_stars_init(int enabled);
 void blit_stars_exit(void);
 
 void blit_reset(int bank_scroll1, int bank_scroll2, int bank_scroll3, uint8_t *pen_usage16);
+void blit_set_scene_order(int l0, int l1, int l2, int l3, int row_scroll);
 void blit_start(int high_layer);
 void blit_finish(void);
 

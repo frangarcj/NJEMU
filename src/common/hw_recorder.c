@@ -97,12 +97,14 @@ static void hw_batch_begin(hw_recorder_t *rec, uint8_t prog, uint8_t depth,
 	hw_cmd_t *b = &rec->batch;
 
 	if (b->quads != 0 &&
-		(b->prog != prog || b->depth != depth || b->texture != texture || b->clut != clut))
+		(b->prog != prog || b->depth != depth || b->texture != texture || b->clut != clut ||
+		 b->plane != rec->plane))
 		hw_rec_flush(rec);
 
 	if (b->quads == 0) {
 		b->prog = prog;
 		b->depth = depth;
+		b->plane = rec->plane;
 		b->texture = texture;
 		b->tex_w = tex_w;
 		b->tex_h = tex_h;
@@ -213,6 +215,11 @@ void hw_rec_set_depth_test(hw_recorder_t *rec, bool enable)
 	rec->depth_test = enable;
 }
 
+void hw_rec_set_plane(hw_recorder_t *rec, uint8_t plane)
+{
+	rec->plane = plane;
+}
+
 void hw_rec_fill(hw_recorder_t *rec, const RECT *rect, uint16_t color555, uint8_t depth)
 {
 	if (rect->right <= rect->left || rect->bottom <= rect->top)
@@ -237,6 +244,7 @@ void hw_rec_begin_work(hw_recorder_t *rec, uint16_t bg555)
 	rec->batch.quads = 0;
 	rec->cmd_count = 0;
 	rec->clip = rec->work;
+	rec->plane = 0;
 	hw_rec_fill(rec, &rec->work, bg555, HW_DEPTH_OFF);
 }
 
